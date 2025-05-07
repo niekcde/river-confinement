@@ -358,6 +358,26 @@ def find_sign_changes(arr):
     sign_changes = np.where(np.sign(arr[:-1]) != np.sign(arr[1:]))[0]
     return sign_changes
 
+def arcVals(p1,p2,line, df, dfN):
+    # Total section calculation
+    infLine = LineString([p1,p2])
+    arcLine = create_bend_line(infLine, line)
+    arcAmp                  = shapely.hausdorff_distance(infLine, arcLine) # Calculate Arc Amplitde
+    bendWidth, bendMaxWidth = get_bend_width(line, arcLine, dfN, df) # get arc bendWidth and max bendWidth
+
+    bc = np.mean(curvature(arcLine, False, False))
+    
+    arcAmpDim     = arcAmp / bendMaxWidth
+    if arcAmpDim <= 0.5:
+        segmentSign = 0
+    elif bc < 0:
+        segmentSign = -1
+    elif bc > 0:
+        segmentSign = 1
+    else:
+        segmentSign = bc
+    
+    return bendWidth, bendMaxWidth, segmentSign, arcLine, infLine, arcAmp
 
 def inflection_points_curve(line:"shapely.LineString", 
                             dfR:"gpd.GeoDataFrame", 
@@ -403,44 +423,20 @@ def inflection_points_curve(line:"shapely.LineString",
         curveChanges[-1] = len(curve)-1
 
 
-
     ##############################
     # Loop over the initial curvature changes (possible inflection points)
     ##############################
     segments,segmentsSingle = np.empty(len(curveChanges)-1),np.empty(len(curveChanges)-1)
     tp, arcSign        =  [],[]
 
-    
     p1     = Point(coords[0])
     p1List = [p1]
     for i in range(len(curveChanges)-1):
-        # Positions of possible inflection points. Select two points to create a linesegment
-        cc1, cc2 = curveChanges[i], curveChanges[i+1] 
+        # Positions of pair of curvechange points.
+        cc1, cc2  = curveChanges[i], curveChanges[i+1] 
         pp1 , p2  = Point(coords[cc1]), Point(coords[cc2])
         
-        def arcVals(p1,p2,line, df, dfN):
-            # Total section calculation
-            infLine = LineString([p1,p2])
-            arcLine = create_bend_line(infLine, line)
-            arcAmp                  = shapely.hausdorff_distance(infLine, arcLine) # Calculate Arc Amplitde
-            bendWidth, bendMaxWidth = get_bend_width(line, arcLine, dfN, df) # get arc bendWidth and max bendWidth
 
-            bc = np.mean(curvature(arcLine, False, False))
-            
-            arcAmpDim     = arcAmp / bendMaxWidth
-            if arcAmpDim <= 0.5:
-                segmentSign = 0
-            elif bc < 0:
-                segmentSign = -1
-            elif bc > 0:
-                segmentSign = 1
-            else:
-                if i == 0:
-                    segmentSign = np.mean(curvature(arcLine, False, False))
-                else:
-                    segmentSign = segments[i-1]
-            
-            return bendWidth, bendMaxWidth, segmentSign, arcLine, infLine, arcAmp
         bendWidth, bendMaxWidth, segmentSign, arcLine,infLine, arcAmp = arcVals(p1, p2,line, dfR, dfNodeR)
 
 
