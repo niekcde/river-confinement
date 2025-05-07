@@ -119,7 +119,7 @@ def merge_centerlines(dfLines:gpd.GeoDataFrame, df:gpd.GeoDataFrame,
                 A = 3
                 line = connect_multilinestring_rows(dfLines)
         else:
-            print(f'merge_centerlines: wrong geom type for lines input: {dfLines["combined_reach_id"].unique()}')
+            print(f'merge_centerlines: wrong geom type for lines input: {dfLines['combined_reach_id'].unique()}')
 
     else:
         line = lines[0]

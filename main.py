@@ -303,21 +303,17 @@ def create_new_reaches_main(c):
         dfIn     = gpd.read_file(fr)
         dfNodeIn = gpd.read_file(fn)
 
-        df, dfNode = new_reach_definition(dfIn,dfNodeIn,4*12, directory, fileName, save = True)
+        new_reach_definition(dfIn,dfNodeIn,4*12, directory, fileName, save = True)
+
+def run_create_new_reaches_main(continents:'list'):
+    create_new_stat = True
 
 
-
-create_new      = False
-create_new_stat = True
-
-if create_new == True:
-    continents = ['af', 'as', 'eu', 'na', 'oc', 'sa']
-    if __name__ == '__main__':
-        print('start multiproces')
-        with Pool(6) as p:
-            p.imap(create_new_reaches_main, continents)
-            p.close()
-            p.join()
+    print('start multiproces')
+    with Pool(6) as p:
+        p.imap(create_new_reaches_main, continents)
+        p.close()
+        p.join()
     if create_new_stat == True:
         print('Multiproces Done')
         files = np.sort(glob.glob(directory +f'results/new_segments/vector/??_??_*.gpkg'))
@@ -335,6 +331,12 @@ if create_new == True:
         SWORD_stats(dfT, directory)
         smooth_factor(dfT, directory)
         file_sorting(dfT, directory)
+
+
+# create_new      = True
+# if create_new == True:
+#     run_create_new_reaches_main(['af'])
+
 
 # # newsegment files
 # dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
@@ -359,6 +361,11 @@ if create_new == True:
 #%%
 continentInput       = sys.argv[1]  # First argument
 number_of_processors = int(sys.argv[2])  # Second argument
+
+create_new      = True
+if create_new == True:
+    run_create_new_reaches_main([continentInput])
+
 
 dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
 dfFiles = dfFiles[dfFiles['file'].str.startswith(continentInput)].sort_values('size', ascending = False)
