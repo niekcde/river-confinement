@@ -423,11 +423,11 @@ def inflection_points_curve(line:"shapely.LineString",
         curveChanges[-1] = len(curve)-1
 
 
-    ##############################
+    ############################################################
     # Loop over the initial curvature changes (possible inflection points)
-    ##############################
+    ############################################################
     segments,segmentsSingle = np.empty(len(curveChanges)-1),np.empty(len(curveChanges)-1)
-    tp, arcSign        =  [],[]
+    tp, arcSign, ti         =  [],[], []
 
     p1     = Point(coords[0])
     p1List = [p1]
@@ -436,26 +436,30 @@ def inflection_points_curve(line:"shapely.LineString",
         cc1, cc2  = curveChanges[i], curveChanges[i+1] 
         pp1 , p2  = Point(coords[cc1]), Point(coords[cc2])
         
-
-        bendWidth, bendMaxWidth, segmentSign, arcLine,infLine, arcAmp = arcVals(p1, p2,line, dfR, dfNodeR)
-
-
-        (bendWidthSingle, bendMaxWidthSingle, segmentSignSingle, arcLineS,infLineS, arcAmpS
-         ) = arcVals(pp1,p2,line, dfR,dfNodeR)
+        # get bend values for segments. Total section and section between consecutive points
+        bendWidth, bendMaxWidth, segmentSign, arcLine,infLine, arcAmp = arcVals(p1 , p2, line, dfR, dfNodeR)
+        _, _, segmentSignSingle, _,_, _                               = arcVals(pp1, p2, line, dfR, dfNodeR)
         
-
-        segments[i]       = segmentSign # add values to list
+        # Save curvature sign 
+        segments[i]       = segmentSign 
         segmentsSingle[i] = segmentSignSingle
-
-
 
         # Combine Inflection points. Consequtive inflection points with same sign are combined and 
         # inflection points with same sign with straight section in between are also combined.
         if (i == 0): # always have first coordinate as inflection point
-            tp.append(coords[0]), arcSign.append(segmentSign)
-            segments[i] = 0
+            # change or add inflection point
+            tp.append(list(coords[0])), arcSign.append(segmentSign), ti.append(0)
+            segments[i] = segmentSign
+            if segmentSign != 0: # if first section is not straight add both points
+                targetCoords = list(coords[cc2])
+                p1 = Point(targetCoords) # update combined point after sign change in inflection points
+                p1List.append(p1)
+                # change or add inflection point
+                tp.append(targetCoords), arcSign.append(segmentSign), ti.append(cc2)
 
         elif i > 0:
+            # condition:
+                # check difference between segmentSign total and consecutive
             if ((segmentSign != segments[i-1]) & (segmentSign != 0)) | (
                 (segmentSignSingle != 0) & (segmentSignSingle != segmentsSingle[i-1])):
                 
@@ -464,53 +468,50 @@ def inflection_points_curve(line:"shapely.LineString",
                 p1List.append(p1)
 
                 if len(tp) == 1:
-                    tp.append(targetCoords), arcSign.append(segmentSign)
-                    # print('add First')
+                    # change or add inflection point
+                    tp.append(targetCoords), arcSign.append(segmentSign), ti.append(cc2)
+
                 elif (segmentSignSingle != 0) & (segmentSignSingle != segmentsSingle[i-1]):
                     if (arcSign[-1] == segmentSignSingle):
+                        # change or add inflection point
                         tp[-1]      = targetCoords
-                        arcSign[-1] = segmentSign
-                        # print('Add Single replace')
+                        arcSign[-1] = segmentSignSingle 
+                        ti[-1]      = cc2
                     else:
-                        # only add cc1 if prev is 0?????????????
+                        
                         if segments[i-1] == 0:
-                            tp.append(list(coords[cc1]))
-                            arcSign.append(segmentSignSingle)
-                        tp.append(targetCoords)
-                        arcSign.append(segmentSign)
-                        # print('Add Single Add')
+                            # change or add inflection point
+                            tp.append(list(coords[cc1])), arcSign.append(int(segmentsSingle[i-1])), ti.append(cc1)
+                        # change or add inflection point
+                        tp.append(targetCoords), arcSign.append(segmentSignSingle), ti.append(cc2) #segmentSingle
                         
 
                 elif (arcSign[-1] == segmentSign):
-
+                    # change or add inflection point
                     tp[-1]      = targetCoords
                     arcSign[-1] = segmentSign
+                    ti[-1]      = cc2
                 else:
-                    tp.append(targetCoords), arcSign.append(segmentSign)
+                    # change or add inflection point
+                    tp.append(targetCoords), arcSign.append(segmentSign), ti.append(cc2)
 
-
-        print(i, f'{len(tp)}'.ljust(3), f'{segmentSign}'.ljust(3), f'{segmentSignSingle}'.ljust(3))
-        print(f'{arcAmp}, {bendMaxWidth}, {arcLine.length}, {infLine.length}')
-
-        # f'{np.round(arcAmpDim, 6)}'.ljust(10)
-
-
-
-
-
+        # print(i, f'{len(tp)}'.ljust(3), f'{segmentSign}'.ljust(3), f'{segmentSignSingle}'.ljust(3))
+        # print(f'\t{int(arcAmp)}, {int(bendMaxWidth)}, {int(arcLine.length)}, {int(infLine.length)}')
+        # print()
+    #check and point and if necessary adjust end_point
     finalPoint = coords[curveChanges[-1]]
-    # check if final two points are correct
     if Point(coords[curveChanges[-2]]) == Point(tp[-1]):  
         if (arcAmp / bendMaxWidth) < 0.5:
             tp[-1] = finalPoint
+            ti[-1] = curveChanges[-1]
         else:
-            tp.append(finalPoint) # always add final point as inflection point
+            tp.append(finalPoint), ti.append(curveChanges[-1]) # always add final point as inflection point
     elif Point(coords[curveChanges[-1]]) != Point(tp[-1]):
-        tp.append(finalPoint) # always add final point as inflection point
+        tp.append(finalPoint), ti.append(curveChanges[-1]) # always add final point as inflection point
     
 
     # check if second point is correct?????
-    if tp[1] == tuple(coords[curveChanges[1]]):
+    if Point(tp[1]) == Point(coords[curveChanges[1]]):
         p1, p2 = Point(tp[0]), Point(tp[1])
 
         infLine = LineString([p1,p2])
@@ -519,31 +520,32 @@ def inflection_points_curve(line:"shapely.LineString",
         bendWidth, bendMaxWidth = get_bend_width(line, arcLine, dfNodeR, dfR) # get arc bendWidth and max bendWidth
         if (arcAmp / bendMaxWidth) < 0.5:
             tp.pop(1)
+            ti.pop(1)
 
-
+    ############################################################
+    # loop over bends/apex values
+    ############################################################
     infCoords = tp # get list of coordinates for inflection points
-
     lenApex = len(infCoords)-1 # Number of bends
+
     # create empty lists and arrays to be filled with bend values
     bendLines, infLines   = np.empty(lenApex, dtype = object), np.empty(lenApex, dtype = object)
     apexPList, apexPOList = np.empty(lenApex, dtype = object), np.empty(lenApex, dtype = object)
     bendSin   , bendWidths, bendMaxWidths       = np.empty(lenApex), np.empty(lenApex), np.empty(lenApex) 
     amplitudes, curveList , bendDO, bendLengths = np.empty(lenApex), np.empty(lenApex), np.empty(lenApex), np.empty(lenApex)
-    
-    ##############################
-    # loop over bends/apex values
-    ##############################
+    newInfCoords = np.array(infCoords.copy())
+
+    removeInd = []
     for ip in range(lenApex):
         p1 = infCoords[ip]
         p2 = infCoords[ip+1]
-
 
         # get inflection line and bend values
         infLine = LineString([p1, p2])
         bendLine                = create_bend_line(infLine, line)
         bendWidth, bendMaxWidth = get_bend_width(line, bendLine,
                                                  dfNodeR, dfR)
-    
+        bendCurvature = np.nanmean(curvature(bendLine, False, False))
         ##########
         # Determine apex points
         ##########
@@ -552,8 +554,40 @@ def inflection_points_curve(line:"shapely.LineString",
 
         # distance based
         apexP, apexPO, amplitude = get_apex_distance(bendLine, infLine, arcSign[ip])
-        # dt52 = dt.now()
+        acError = False
+        if (amplitude / (0.5*bendMaxWidth)) < 0.5:
+            ac = 0
+        elif bendCurvature < 0:
+            ac = -1
+        elif bendCurvature > 0:
+            ac = 1
+        else:
+            ac  = 0
+            acError = True
+        if (ac == 0) & (acError == False) & (lenApex > 2):
+            pos1 = np.where(curveChanges == ti[ip])[0]
+            pos2 = np.where(curveChanges == ti[ip+1])[0]
+            if ip == (lenApex-1):
+                newPos = pos2[0]
+            else:
+                newPos = int((pos1+pos2) / 2)
 
+            newCoord = coords[curveChanges[newPos]]
+            newInfCoords[ip+1] = newCoord
+            removeInd.append(ip)
+
+            # get inflection line and bend values
+            infLine = LineString([infCoords[ip-1], newCoord])
+            bendLine                = create_bend_line(infLine, line)
+            bendWidth, bendMaxWidth = get_bend_width(line, bendLine,
+                                                    dfNodeR, dfR)
+            bendCurvature = np.nanmean(curvature(bendLine, False, False))
+            
+            # distance based
+            apexP, apexPO, amplitude = get_apex_distance(bendLine, infLine, arcSign[ip])
+            ip = 0 if ip == 0 else ip-1
+        
+        # print(ip, int(amplitude), int(bendWidth), int(bendMaxWidth), int(bendLine.length), int(infLine.length), arcSign[ip], ac)
         #####################
         # save values
         #####################
@@ -563,226 +597,25 @@ def inflection_points_curve(line:"shapely.LineString",
         apexPList[ip]  = apexP
         apexPOList[ip] = apexPO
 
-        # valies
-
-
+        # Line values
         bendLengths[ip]   = bendLine.length
         bendSin[ip]       = bendLine.length / infLine.length 
         bendWidths[ip]    = bendWidth
         bendMaxWidths[ip] = bendMaxWidth
         amplitudes[ip]    = amplitude
-
-        curveList[ip]     = np.nanmean(curvature(bendLine, False, False))
+        curveList[ip]     = bendCurvature
         bendDO[ip]        = get_bend_dist_out(line, bendLine, dfNodeR)
 
     # Reach sinuosity
     sin  = line.length / LineString(infCoords).length
 
-    return (sin, bendSin,infCoords, coords[curveChanges], amplitudes, apexPList, apexPOList, curveList, 
-                bendLines, infLines, bendWidths, bendMaxWidths, bendDO, bendLengths)
+    remList = [bendLines, infLines, apexPList, apexPOList, bendSin   , bendWidths, bendMaxWidths, 
+               amplitudes, curveList , bendDO, bendLengths,newInfCoords]
+    for i in range(len(remList)):
+        remList[i] = np.delete(remList[i], removeInd, axis = 0)
 
+    print(bendWidths.astype(int))
+    print(bendMaxWidths)
 
-
-# def inflection_points_curve(line:"shapely.LineString", 
-#                             dfR:"gpd.GeoDataFrame", 
-#                             dfNodeR:"gpd.GeoDataFrame"):
-#     """Calculate inflection points based on sign of curvature of a bend. Minimal amplitude requirend of 0.5 bendwidth.\n
-#     input:
-#     - line: reach centerline
-#     - dfR: reach dataframe
-#     - dfNodeR: reach node dataframe\n
-#     output:
-#     - Reach sinuosity
-#     - Combined Inflection points
-#     - Initially calculated inlfection points
-#     - Amplitudes
-#     - Apex points (list of shapely points)
-#     - Apex Origin points (list of shapely points)
-#     - Curvature values per bend
-#     - Bendlines (list of shapely LineStrings)
-#     - bendWidths
-#     - bend Max widths
-#     - bend distance to outlet
-#     All output geometries are in local reach crs
-#     """
-#     # dt1 = dt.now()
-#     ##############################
-#     # Get coordinates and curvature values
-#     ##############################
-#     coords = np.array(line.coords)
-#     curve  = curvature(line, False, False)
-#     # get list of indices for curvature changes
-#     curveChanges = find_sign_changes(curve)
-
-#     curveChangesVal = curve[curveChanges]
-#     zeroVals = np.where(curveChangesVal == 0.0)[0]
-#     curveChanges = np.delete(curveChanges, zeroVals)
-
-#     if curveChanges[0] != 0:
-#         curveChanges = np.insert(curveChanges, 0, 0)
-#     if curveChanges[-1] != len(curve)-2:
-#         curveChanges = np.append(curveChanges, len(curve)-1)
-#     else:
-#         curveChanges[-1] = len(curve)-1
-
-
-
-#     ##############################
-#     # Loop over the initial curvature changes (possible inflection points)
-#     ##############################
-#     segments, tp, arcSign, straight = np.empty(len(curveChanges)-1), [],[], False
-#     p1     = Point(coords[0])
-#     p1List = [p1]
-#     curveVal =0
-#     for i in range(len(curveChanges)-1):
-#         # Positions of possible inflection points. Select two points to create a linesegment
-#         cc1, cc2 = curveChanges[i], curveChanges[i+1] 
-#         pp1 , p2  = Point(coords[cc1]), Point(coords[cc2])
-#         infLine = LineString([p1,p2])
-#         arcLine = create_bend_line(infLine, line)
-
-#         arcAmp                  = shapely.hausdorff_distance(infLine, arcLine) # Calculate Arc Amplitde
-#         bendWidth, bendMaxWidth = get_bend_width(line, arcLine, dfNodeR, dfR) # get arc bendWidth and max bendWidth
-
-#         C = curve[cc1]
-#         C = np.mean(curve[cc1:cc2+1])
-
-#         # # get indices for curvature range        
-
-#         # Divide Arc segments in Straight (small amlitude), Positive and Negative
-#         arcAmpDim = arcAmp / bendMaxWidth
-        
-#         if arcAmpDim <= 0.5:
-#             segmentSign = 0
-#         elif C < 0:
-#             segmentSign = -1
-#         elif C > 0:
-#             segmentSign = 1
-#         else:
-#             if i == 0:
-#                 segmentSign = np.mean(curvature(arcLine, False, False))
-#             else:
-#                 segmentSign = segments[i-1]
-#         # print()
-#         # print(curve[cc1], C, np.mean(curve[cc1:cc2]))
-#         segments[i] = segmentSign # add values to list
-
-
-#         # plt.plot(*infLine.xy)
-#         # plt.plot(*arcLine.xy)
-#         # plt.axis('equal')
-#         # plt.show()
-        
-
-#         # Combine Inflection points. Consequtive inflection points with same sign are combined and 
-#         # inflection points with same sign with straight section in between are also combined.
-#         if (i == 0): # always have first coordinate as inflection point
-#             curveVal = segmentSign
-#             tp.append(cc1), arcSign.append(segmentSign)
-#             segments[i] = 0
-#             # print('\tAdd')
-#         elif i > 0:
-#             targetPoint = cc1
-#             if segmentSign != segments[i-1]:
-
-
-#                 p1 = Point(coords[cc2]) # update combined point after sign change in inflection points
-#                 p1List.append(p1)
-                
-#                 if segmentSign == 0:
-#                     straight = True
-#                     tp.append(targetPoint), arcSign.append(segmentSign)
-#                     # print('\tstraight add')
-#                 elif (straight == True) & (segmentSign == curveVal):
-#                     # tp[-1] = targetPoint
-#                     tp.pop(), arcSign.pop(), p1List.pop()
-#                     straight = False
-#                     p1 = p1List[-1]
-#                     print('\tstraight remove')
-#                 else:
-#                     tp.append(targetPoint), arcSign.append(segmentSign)
-#                     # print('\tCurve add')
-#                     curveVal = segmentSign
-#                     straight = False
-#         print(f'{np.round(arcAmpDim, 6)}'.ljust(10), f'{np.round(arcAmp, 5)}'.ljust(9), f'{np.round(C, 5)}'.ljust(9), f'{len(tp)}'.ljust(3), f'{segmentSign}'.ljust(3), curveVal, p1, Point(coords[cc1]),p2)
-#     if np.where(curveChanges == tp[-1])[0] == (len(curveChanges) -2):
-#         if (arcAmp / bendMaxWidth) < 0.5:
-#             tp[-1] = curveChanges[-1]
-#         else:
-#             tp.append(curveChanges[-1]) # always add final point as inflection point
-#     else:
-#         tp.append(curveChanges[-1]) # always add final point as inflection point
-    
-#     if tp[1] == curveChanges[1]:
-#         p1, p2 = Point(coords[tp[0]]), Point(coords[tp[1]])
-
-#         infLine = LineString([p1,p2])
-#         arcLine = create_bend_line(infLine, line)
-#         arcAmp                  = shapely.hausdorff_distance(infLine, arcLine) # Calculate Arc Amplitde
-#         bendWidth, bendMaxWidth = get_bend_width(line, arcLine, dfNodeR, dfR) # get arc bendWidth and max bendWidth
-#         if (arcAmp / bendMaxWidth) < 0.5:
-#             tp.pop(1)
-
-
-
-    
-#     infCoords = coords[tp] # get list of coordinates for inflection points
-
-#     lenApex = len(infCoords)-1 # Number of bends
-#     # create empty lists and arrays to be filled with bend values
-#     bendLines, infLines   = np.empty(lenApex, dtype = object), np.empty(lenApex, dtype = object)
-#     apexPList, apexPOList = np.empty(lenApex, dtype = object), np.empty(lenApex, dtype = object)
-#     bendSin   , bendWidths, bendMaxWidths       = np.empty(lenApex), np.empty(lenApex), np.empty(lenApex) 
-#     amplitudes, curveList , bendDO, bendLengths = np.empty(lenApex), np.empty(lenApex), np.empty(lenApex), np.empty(lenApex)
-    
-#     ##############################
-#     # loop over bends/apex values
-#     ##############################
-#     for ip in range(lenApex):
-#         p1 = infCoords[ip]
-#         p2 = infCoords[ip+1]
-
-#         # get indices for curvature range
-#         curveIndex1 = tp[ip] if ip == 0 else tp[ip] + 1
-#         curveIndex2 = tp[ip+1] +1 if (ip +2) < len(tp)  else tp[ip+1]
-        
-#         # get inflection line and bend values
-#         infLine = LineString([p1, p2])
-#         bendLine                = create_bend_line(infLine, line)
-#         bendWidth, bendMaxWidth = get_bend_width(line, bendLine,
-#                                                  dfNodeR, dfR)
-    
-#         ##########
-#         # Determine apex points
-#         ##########
-#         # curvature based
-#         # apexP, apexPO, amplitude = get_apex_curve(bendLine, infLine, arcSign[ip])
-
-#         # distance based
-#         apexP, apexPO, amplitude = get_apex_distance(bendLine, infLine, arcSign[ip])
-#         # dt52 = dt.now()
-
-#         #####################
-#         # save values
-#         #####################
-#         #Geometries
-#         bendLines[ip]  = bendLine
-#         infLines[ip]   = infLine
-#         apexPList[ip]  = apexP
-#         apexPOList[ip] = apexPO
-
-#         # valies
-#         bendLengths[ip]   = bendLine.length
-#         bendSin[ip]       = bendLine.length / infLine.length 
-#         bendWidths[ip]    = bendWidth
-#         bendMaxWidths[ip] = bendMaxWidth
-#         amplitudes[ip]    = amplitude
-
-#         curveList[ip]     = np.nanmean(curve[curveIndex1:curveIndex2])
-#         bendDO[ip]        = get_bend_dist_out(line, bendLine, dfNodeR)
-
-#     # Reach sinuosity
-#     sin  = line.length / LineString(infCoords).length
-
-#     return (sin, bendSin,infCoords, coords[curveChanges], amplitudes, apexPList, apexPOList, curveList, 
-#                 bendLines, infLines, bendWidths, bendMaxWidths, bendDO, bendLengths)
+    return (sin, remList[4], remList[11], coords[curveChanges], remList[7], remList[2], remList[3], remList[8], 
+                remList[0], remList[1], remList[5], remList[6], remList[9], remList[10])

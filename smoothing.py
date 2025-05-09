@@ -35,7 +35,7 @@ def SG_smoothing(line, w, width):
     return: Smoothed LineString
     """
     line = line.segmentize(1)
-    line       = line.simplify(0.1, preserve_topology=True)
+    line = line.simplify(0.1, preserve_topology=True)
 
     lineSmooth = apply_smoothing(line, w)
 

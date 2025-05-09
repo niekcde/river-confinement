@@ -583,7 +583,6 @@ def get_connected_reach(row:gpd.GeoSeries, direction:str, df:gpd.GeoDataFrame, d
     else:
         reach = np.nan
 
-
     return reach, wn, who
 
 def split_river_segments(df:gpd.GeoDataFrame,dfNode:gpd.GeoDataFrame, minReachLen:int = 4*12)->gpd.GeoDataFrame:
@@ -802,7 +801,7 @@ def river_catchment_position(df):
             dfSegment = dfCatch[(dfCatch['path_segs'] == rs['path_segs']) & 
                                 (dfCatch['pfaf2'] == rs['pfaf2'])]
             segmentIndex = dfSegment.index
-            segmentReach = dfSegment['reach_id'].iloc[0]
+            segmentReach = dfSegment.loc[dfSegment['dist_out'] == dfSegment['dist_out'].min(), 'reach_id'].iloc[0]
             
             upstreamReaches   = nx.ancestors(G, segmentReach)
             upstreamEndPoints = list(set(startPoints) & set(upstreamReaches))
@@ -813,10 +812,13 @@ def river_catchment_position(df):
                 distVal   = row['dist_out']
                 reachVal  = row['reach_id']
 
-            else:
-                print('Error no upstream end point detected')
-                reachVal = np.nan
+            elif dfSegment.shape[0] == 1:
+                reachVal = segmentReach
                 distVal = dfSegment['dist_out'].iloc[0]
+            else:
+                print(f'new_reach_definition - river_catchment_position: Error no upstream end point detected ({segmentReach})')
+                reachVal = np.nan
+                distVal  = np.nan
             df.loc[segmentIndex, 'max_dist_out'] = distVal
             df.loc[segmentIndex, 'up_reach_id']  = reachVal
     df['catchment_position'] = df['dist_out'] / df['max_dist_out']

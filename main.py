@@ -310,12 +310,12 @@ def run_create_new_reaches_main(continents:'list'):
 
 
     print('start multiproces')
-    with Pool(6) as p:
+    with Pool(len(continents)) as p:
         p.imap(create_new_reaches_main, continents)
         p.close()
         p.join()
+    print('Multiproces Done')
     if create_new_stat == True:
-        print('Multiproces Done')
         files = np.sort(glob.glob(directory +f'results/new_segments/vector/??_??_*.gpkg'))
         for i, f in enumerate(files):
             D = gpd.read_file(f)
@@ -335,7 +335,7 @@ def run_create_new_reaches_main(continents:'list'):
 
 # create_new      = True
 # if create_new == True:
-#     run_create_new_reaches_main(['af'])
+#     run_create_new_reaches_main(['af', 'oc', 'as', 'sa', 'eu', 'na'])
 
 
 # # newsegment files
@@ -362,7 +362,7 @@ def run_create_new_reaches_main(continents:'list'):
 continentInput       = sys.argv[1]  # First argument
 number_of_processors = int(sys.argv[2])  # Second argument
 
-create_new      = True
+create_new      = False
 if create_new == True:
     run_create_new_reaches_main([continentInput])
 

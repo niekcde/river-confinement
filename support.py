@@ -899,7 +899,7 @@ def smooth_factor(df, directory):
     dfIncG = dfInc.groupby('combined_reach_id').first()
 
     # dfIncG['smoothFactor'] = shaped_logarithmic(dfIncG['combined_reach_width'].copy() ,0.95, 1, 5, 1)
-    dfIncG['smoothFactor'] = shaped_lineair(dfIncG['combined_reach_width'].copy() ,0.95, 1, 5)
+    dfIncG['smoothFactor'] = shaped_lineair(dfIncG['combined_reach_width'].copy(), 0.05,0.95, 1, 5)
     
     dfSM = dfIncG[['smoothFactor', 'combined_reach_width']].reset_index().copy()
     dfSM.to_csv(directory + 'results/smoothingFactor.csv')
