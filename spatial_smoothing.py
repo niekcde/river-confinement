@@ -60,7 +60,7 @@ def create_multiprocess_iterator(df):
 def bend_neighbor_graph(df):
     nodes = []
     edges = []
-    for network in tqdm(df['networkGraph'].unique()):
+    for network in tqdm(df['networkGraph'].unique(), position=0, leave=True):
         dfb = df[(df['networkGraph'] == network)]
         for idx, row in dfb.iterrows():
             
@@ -186,64 +186,39 @@ def smooth_attributes(sid, attr, length_dict, df, max_dist=20000, max_neighbors=
     return np.average(vals[:,2:],  weights=weights, axis = 0)
 
 
-def run_bend_smoothing(df, cont):
-    df = df[df['file'] == cont].copy()
-    # add rank to bends withing combinedReach
-    df['bendRank'] = df.groupby('combined_reach_id')['bendDistOut'].rank(ascending=False).astype(int)
-    df['bendID']   = df['combined_reach_id'].astype(int).astype(str) + '_' + df['bendRank'].astype(str)
+def run_bend_smoothing(cont, df):
+    try:
+        print('Run bend Smoothing', cont)
+        df = df[df['file'] == cont].copy()
+        # add rank to bends withing combinedReach
+        df['bendRank'] = df.groupby('combined_reach_id')['bendDistOut'].rank(ascending=False).astype(int)
+        df['bendID']   = df['combined_reach_id'].astype(int).astype(str) + '_' + df['bendRank'].astype(str)
 
-    df = df.sort_values(['file', 'combined_reach_id', 'bendRank'])
-    
-    ldFolder = directory + f'results/single_smoothed/length_dict_{cont}.pkl'
-    if os.path.exists(ldFolder):
-        with open(ldFolder, 'rb') as f:
-            ld = pickle.load(f)
-    else:
-        ld = bend_neighbor_graph(df)
-
-
-    attr = ['slope_left_normalized', 'slope_right_normalized',
-                    'slope_out_normalized','slope_inn_normalized']
-    attrS = [f'{a}_smooth' for a in attr]
-    for sid in tqdm(df['bendID'].values):
-        df.loc[df['bendID'] == sid, attrS] = smooth_attributes(sid, attr, ld, df, max_neighbors=5)
-
-    print('Create smooth vars done')
-    dfNC = df.to_xarray()
-    ncFile = directory + f'results/single_smoothed/{cont}_{cross}_{hf}_smoothed.nc'
-    if os.path.exists(ncFile):
-        os.remove(ncFile)
-
-    dfNC.to_netcdf(ncFile)
-def run_bend_smoothing(df, cont):
-    df = df[df['file'] == cont].copy()
-    # add rank to bends withing combinedReach
-    df['bendRank'] = df.groupby('combined_reach_id')['bendDistOut'].rank(ascending=False).astype(int)
-    df['bendID']   = df['combined_reach_id'].astype(int).astype(str) + '_' + df['bendRank'].astype(str)
-
-    df = df.sort_values(['file', 'combined_reach_id', 'bendRank'])
-    
-    ldFolder = directory + f'results/single_smoothed/length_dict_{cont}.pkl'
-    if os.path.exists(ldFolder):
-        with open(ldFolder, 'rb') as f:
-            ld = pickle.load(f)
-    else:
-        ld = bend_neighbor_graph(df)
+        df = df.sort_values(['file', 'combined_reach_id', 'bendRank'])
+        
+        ldFolder = directory + f'results/single_smoothed/length_dict_{cont}.pkl'
+        if os.path.exists(ldFolder):
+            with open(ldFolder, 'rb') as f:
+                ld = pickle.load(f)
+        else:
+            ld = bend_neighbor_graph(df)
 
 
-    attr = ['slope_left_normalized', 'slope_right_normalized',
-                    'slope_out_normalized','slope_inn_normalized']
-    attrS = [f'{a}_smooth' for a in attr]
-    for sid in tqdm(df['bendID'].values):
-        df.loc[df['bendID'] == sid, attrS] = smooth_attributes(sid, attr, ld, df, max_neighbors=5)
+        attr = ['slope_left_normalized', 'slope_right_normalized',
+                        'slope_out_normalized','slope_inn_normalized']
+        attrS = [f'{a}_smooth' for a in attr]
+        for sid in tqdm(df['bendID'].values, position=0, leave=True):
+            df.loc[df['bendID'] == sid, attrS] = smooth_attributes(sid, attr, ld, df, max_neighbors=5)
 
-    print('Create smooth vars done')
-    dfNC = df.to_xarray()
-    ncFile = directory + f'results/single_smoothed/{cont}_{cross}_{hf}_smoothed.nc'
-    if os.path.exists(ncFile):
-        os.remove(ncFile)
+        print('Create smooth vars done')
+        dfNC = df.to_xarray()
+        ncFile = directory + f'results/single_smoothed/{cont}_{cross}_{hf}_smoothed.nc'
+        if os.path.exists(ncFile):
+            os.remove(ncFile)
 
-    dfNC.to_netcdf(ncFile)
+        dfNC.to_netcdf(ncFile)
+    except:
+        print('crash?')
 #%%
 cross = 50
 hf    = 2
@@ -291,26 +266,17 @@ df['slope_right_normalized'] = df['slope_right'] / df['slope_max']
 
 
 df['bend_catch_pos'] = df['bendDistOut'] / df['max_dist_out']
-
 df['glob_reach_id'] = df.groupby(['file', 'combined_reach_id']).ngroup()
-dfG = df.groupby(['glob_reach_id'], as_index = False)[['file', 'combined_reach_id', 'combined_reach_len', 'sin']].first()
 
 
-# add rank to bends withing combinedReach
-# df['bendRank'] = df.groupby('glob_reach_id')['bendDistOut'].rank(ascending=False).astype(int)
-# df['bendID']   = df['glob_reach_id'].astype(int).astype(str) + '_' + df['bendRank'].astype(str)
-#%%
-
-# multiIterator = create_multiprocess_iterator(df)
-
-
+print('start Multi')
 dt1 = dt.now()
-partial_func = partial(run_bend_smoothing, df=df)
-continents = ['oc', 'as', 'sa', 'af', 'eu', 'na']
-with Pool(6) as pool:
-    pool.imap(partial_func, continents)
-    pool.close()
-    pool.join()
+if __name__ == '__main__':
+    partial_func = partial(run_bend_smoothing, df=df)
+    continents = ['oc', 'as', 'sa', 'af', 'eu', 'na']
+    with Pool(6) as pool:
+        pool.map(partial_func, continents)
+        
 
 # multiResults = list(results)
 print(f'Create nodes and edges finished: {dt.now() - dt1}')
