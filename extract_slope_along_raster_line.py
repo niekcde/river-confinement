@@ -22,9 +22,7 @@ def extract_slope_along_raster_line(xarr, line, samples = 400):
     dist    = [] 
     
     xs, xy = [],[]
-
     for i in range(samples):
-
         point = line.interpolate(i  / samples - 1. , normalized=True)
         
         xs.append(point.x)

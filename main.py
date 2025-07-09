@@ -32,6 +32,7 @@ import numpy as np
 from multiprocessing import Pool
 from shapely.geometry import LineString
 from osgeo import gdal
+from scipy.stats import trim_mean
 
 # %% Import custom modules
 # 
@@ -41,7 +42,7 @@ from get_orthogonals import get_orthogonals
 from support import create_dir, SWORD_stats, smooth_factor,\
                     file_sorting, node_position, adjust_new_segments,\
                     check_memory
-from reach_definition import new_reach_definition
+from reach_definition import new_reach_definition, create_continent_new_reach
 from connect_geometries import merge_centerlines
 from smoothing import SG_smoothing
 
@@ -84,17 +85,14 @@ def main(multiInput):
         # change rch up/dn from str to list
         df = adjust_new_segments(df) # change string values to list values
 
-
         ########################################################################
         # Calculate metrics
         ########################################################################
         minLenFactor = 4*12
 
-
         #%% Calc values
         ids = df.loc[df['include_flag'] == '0','combined_reach_id'].unique()
         dfSF = pd.read_csv(directory + 'results/smoothingFactor.csv')
-        
         
         vrt_file = directory + "input_created/FAB_dem_vrt.vrt"
         demVRT   = gdal.Open(vrt_file)
@@ -103,8 +101,7 @@ def main(multiInput):
         str_replace = '[()]|list'
 
         print(f'Start for loop {len(ids)}')
-        
-        # for id in tqdm(ids):
+        # for id in tqdm(ids, desc=f"{contName}_{fileNumber}"):
         for id in ids:
             calculated = '0'
             try:
@@ -117,21 +114,21 @@ def main(multiInput):
 
                 dfReach      = dfReach.to_crs(reachCRS)
                 dfReachNodes = dfReachNodes.to_crs(reachCRS)
-
+                df.loc[dfReach.index, 'combined_reach_crs'] = reachCRS           
 
                 combinedLine, _, _ = merge_centerlines(dfReach, df, reachCRS)
 
-                dfReachNodes       = node_position(combinedLine, dfReachNodes)
 
-
-                maxWidth = dfReach['combined_reach_max_width'].iloc[0]
-                width    = dfReach['combined_reach_width'].iloc[0]
-                reachLen = dfReach['combined_reach_len'].iloc[0]
-                minLen       = minLenFactor * reachLen
-
-                if np.isnan(maxWidth):
-                    maxWidth = dfReachNodes['max_width'].mean()
-
+                ###########################
+                # Set width factor value
+                ###########################
+                widthVar    = 'width'
+                factorWidth = dfReach['combined_reach_width'].iloc[0]
+            
+                if dfReachNodes[widthVar].std() > (factorWidth/2):
+                    factorWidth = trim_mean(dfReachNodes[widthVar], 0.05)
+                if np.isnan(factorWidth):
+                    factorWidth = dfReachNodes[widthVar].mean()
                 ###########################
                 # Width Ratio
                 ###########################
@@ -141,18 +138,20 @@ def main(multiInput):
                 ###########################
                 # Smoothing
                 ###########################
-                factorRow       = abs(dfSF['combined_reach_width'] - width).argsort()
+                factorRow       = abs(dfSF['combined_reach_width'] - factorWidth).argsort()
                 smoothingFactor = dfSF.loc[factorRow, 'smoothFactor'].iloc[0]
                 
-                smoothing_window = smoothingFactor*int(maxWidth)             # Smoothing window based on mean node max width
+                smoothing_window = smoothingFactor*int(factorWidth) # Smoothing window based on mean node max width
                     
-
-                # Smooth the initial line and change dataframe to Series
-                combinedLine = SG_smoothing(combinedLine, smoothing_window, maxWidth)
+                # Smooth centerline
+                combinedLine = SG_smoothing(combinedLine, smoothing_window, factorWidth)
                 if len(combinedLine.coords) < 3:
                     combinedLine = combinedLine.segmentize(1) 
                 
-                df.loc[dfReach.index, 'combined_reach_crs'] = reachCRS           
+                # find node positions along combined centerline
+                # add node positions after smoothing for similarity in coding
+                dfReachNodes = node_position(combinedLine, dfReachNodes)
+                
 
             except:
                 calculated += '1'
@@ -315,6 +314,8 @@ def run_create_new_reaches_main(continents:'list'):
         p.close()
         p.join()
     print('Multiproces Done')
+    # always run with all for update in any continent
+    create_continent_new_reach(['af', 'eu', 'na', 'sa', 'as', 'oc'])
     if create_new_stat == True:
         files = np.sort(glob.glob(directory +f'results/new_segments/vector/??_??_*.gpkg'))
         for i, f in enumerate(files):
@@ -333,20 +334,23 @@ def run_create_new_reaches_main(continents:'list'):
         file_sorting(dfT, directory)
 
 
-# create_new      = True
-# if create_new == True:
-#     run_create_new_reaches_main(['af', 'oc', 'as', 'sa', 'eu', 'na'])
 
+# create_new      = False
+# if create_new == True:
+#     run_create_new_reaches_main(['af', 'eu', 'na', 'sa', 'as', 'oc'])
+# print('run new reach def ready')
 
 # # newsegment files
 # dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
 # dfFiles = dfFiles.sort_values('size', ascending = False)
+# dfFiles = dfFiles.sort_values('filePath', ascending = True)
 # dfFiles = dfFiles[dfFiles['file'].str.startswith('af')].sort_values('size', ascending = False)
 
 # files = dfFiles['filePath'].values
 
+# print(files[4])
+# files = [files[4]]
 
-# files = [files[-1]]
 # confFactor = 50
 # tm1 = dt.now()
 # for f in files:
@@ -355,7 +359,7 @@ def run_create_new_reaches_main(continents:'list'):
 #     cont_reg = f[-26:-24]
 #     print(cont, cont_reg)
 #     df = main([f, confFactor])
-    # print(dt.now() - tm1)
+#     print(dt.now() - tm1)
 
 
 #%%

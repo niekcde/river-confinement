@@ -201,8 +201,8 @@ def create_angled_lines(line, dist = 50,max_angle = 10, return_angle = False):
     - angle: optional return of the angle between original line and created lines
     """
     lineLen = line.length
-
-
+    if dist > lineLen:
+        dist = 0.9* lineLen
     alpha = np.rad2deg(np.arcsin((dist)/(lineLen)))
     while alpha > max_angle:
         dist *= 0.9
@@ -216,7 +216,6 @@ def create_angled_lines(line, dist = 50,max_angle = 10, return_angle = False):
     # get the angle of the original line to a zero degree line
     lineAngle = m.atan2(p2[1] - p1[1], p2[0]  - p1[0])
     angle     = m.radians(alpha)
-    
 
     # calculate position of end points and create line. Repeat for negative angle
     endxp = p1[0] + lineLen * m.cos(angle + lineAngle)
@@ -226,11 +225,14 @@ def create_angled_lines(line, dist = 50,max_angle = 10, return_angle = False):
 
     endxm = p1[0] + lineLen * m.cos((angle *-1) + lineAngle)
     endym = p1[1] + lineLen * m.sin((angle *-1) + lineAngle)
+
+
     angled_linem = LineString([p1, (endxm, endym)])
     if return_angle == True:
         return (angled_linep, angled_linem, alpha)
     else:
         return (angled_linep, angled_linem)
+    
 
 def get_points_along_linestring(line, spacing = 20, separate_xy = False):
     num_points = int(line.length / spacing) + 1
@@ -345,6 +347,36 @@ def curvature(L,coord_selection = True, average = True):
     
     return bendWidth, bendWidthMax
 
+from scipy.optimize import least_squares
+def huber_mean_scipy(data, r=None):
+    """
+    Calculate Huber mean using scipy's least_squares with Huber loss.
+
+    Parameters:
+        data (array-like): Input 1D data.
+        r (float, optional): The transition parameter. Defaults to 1.5 * std.
+
+    Returns:
+        float: Huber mean.
+    """
+    data = np.asarray(data)
+    data = data[~np.isnan(data)]
+    median = np.nanmedian(data)
+    std = np.nanstd(data)
+    if r is None:
+        if std == 0:
+            r = 1e-8  # or a very small number
+        else:
+            r = 1.5 * std
+
+
+    # Objective function: residuals from the candidate mean
+    def residual(mu):
+        return data - mu
+
+    result = least_squares(residual, x0=np.array([median]), loss='huber', f_scale=r)
+    return result.x[0]
+
 def get_bend_width(line, bendLine, dfN, dfR):
     
     # region Fold Start
@@ -359,6 +391,7 @@ def get_bend_width(line, bendLine, dfN, dfR):
     # endregion Fold End
     meanWidth    = nodes['width'].mean()
     meanMaxWidth = nodes['max_width'].mean()
+
     
     if (np.isnan(meanWidth)) | (np.isnan(meanMaxWidth)):
         if isinstance(nodes['reach_id'], np.int64):
@@ -372,19 +405,30 @@ def get_bend_width(line, bendLine, dfN, dfR):
             meanMaxWidth = reaches['max_width'].mean()
 
     return meanWidth, meanMaxWidth
-
+from datetime import datetime as dt
 def get_bend_dist_out(line, bendLine, dfN):
     # region Fold Start
     start = line.project(Point(bendLine.coords[0]))
     end   = line.project(Point(bendLine.coords[-1]))
+    if start > end:
+        start, end = end, start
     
-    nodes = dfN[(dfN['linePos'] > start) & (dfN['linePos'] < end)]
-    if nodes.shape[0] == 0:
-        nodeDistance = dfN['linePos'] - ((end-start) / 2)
-        nodes        = dfN.iloc[nodeDistance.argmin()]
+    # old method
+    # dt1 = dt.now()
+    # nodes = dfN[(dfN['linePos'] > start) & (dfN['linePos'] < end)]
+    # if nodes.shape[0] == 0:
+    #     # print('?')
+    #     nodeDistance = abs(dfN['linePos'] - end)
+    #     # print(nodeDistance.argmin)
+    #     nodes        = dfN.iloc[nodeDistance.argmin()]
 
-    # endregion Fold End
-    bendDistOut    = nodes['dist_out'].max()
+    # bendDistOut    = nodes['dist_out'].max()
+    # dt2 = dt.now()
+    nodeDistance = dfN['linePos'] - end
+    nodeID = abs(nodeDistance).argmin()
+    bendDistOut = dfN['dist_out'].iloc[nodeID] + (nodeDistance.iloc[nodeID] * -1)
+    # dt3 = dt.now()
+    # print(dt2-dt1, dt3-dt2)
 
     return bendDistOut
 
@@ -457,7 +501,7 @@ def create_bend_line(inf_line, riv_line):
 
 
 def checkIntersection(line1, line2):
-    line1 = LineString([line1.interpolate(0.1,normalized = True),
+    line1 = LineString([line1.interpolate(1,normalized = False),
                         line1.interpolate(1  ,normalized = True)])
 
     if line1.intersects(line2):
@@ -477,12 +521,16 @@ def checkIntersection(line1, line2):
 
 def adjust_confinement_line(line, centerline):
     interPoint = checkIntersection(line, centerline)
-
+    
+    
     if isinstance(interPoint, Point):
+
         interPoint  = line.interpolate(line.project(interPoint))
         vectorSplit = shapely.ops.split(line, interPoint.buffer(10))
         vectorSplit = sorted(vectorSplit.geoms, key=lambda seg: line.project(Point(seg.coords[0])))
         line = vectorSplit[0]
+
+
     return line
 
 def localCRSReachLength(DF, col, projection):

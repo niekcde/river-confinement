@@ -41,11 +41,19 @@ def SG_smoothing(line, w, width):
 
     hdist = shapely.hausdorff_distance(line, lineSmooth)
     while hdist > (width*0.5):
-        w *= 0.95        
-        lineSmooth = apply_smoothing(line, w)
         
+        w *= 0.95        
+        if w < 2:
+            print('Smoothing broken at window size 2')
+            break;
+        lineSmooth = apply_smoothing(line, w)
+
         hdist = shapely.hausdorff_distance(line, lineSmooth)
         
+        # print('?', w, width, hdist)
+        # plt.plot(*line.xy)
+        # plt.plot(*lineSmooth.xy)
+        # plt.show()
     return lineSmooth
 
 

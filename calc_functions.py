@@ -303,7 +303,8 @@ def confinement_values(po, pi, cdo, cdi,widthW, widthT, factor):
     input:
     - po/pi: elevation profile for outer and inner bend
     - cdo/cdi: distance from river centerline for outer and inner bend
-    - width: river width
+    - widthW: wetted river width
+    - widthM: Total river width
     - factor: factor that multiplied with the river width determines the confinement height\n
     output:
     - po/pi Intercept: intercept distance for outer and inner bend

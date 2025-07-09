@@ -19,6 +19,7 @@ import os
 ##########################################
 from shapely.geometry import Point
 from tqdm import tqdm
+from glob import glob
 
 ##########################################
 # function typecasting
@@ -41,6 +42,7 @@ def remove_updn_connection(df, dn_connected = False):
 
     df = df.copy()
     remove = df[df['include_flag'] != '0']
+    # remove = df[df['reach_id'] == 18170800391]
     for rind, r in remove.iterrows():
         for side, contra in [['up', 'dn'], ['dn', 'up']]:
             connection = r[f'rch_id_{side}']
@@ -59,7 +61,8 @@ def remove_updn_connection(df, dn_connected = False):
                     conSideN -= 1
                     
                     # update dn_connected_reach                    
-                    if (dn_connected == True) & (contra == 'up'):
+                    if (dn_connected == True) & (contra == 'dn'):
+                        # print(r['reach_id'], conRow['reach_id'])
                         dnCon = conRow['dn_connected_reach']
                         if dnCon == r['reach_id']:
                             df.loc[conInd, 'dn_connected_reach'] = np.nan
@@ -73,6 +76,9 @@ def remove_updn_connection(df, dn_connected = False):
             # remove connection values from not included rows
             df.at[rind, f"rch_id_{side}"] = np.nan
             df.at[rind, f"n_rch_{side}"]  = 0
+        
+        # remove dn_connected Reach
+        df.loc[rind, "dn_connected_reach"] = np.nan
                     
         
     return df
@@ -824,7 +830,48 @@ def river_catchment_position(df):
     df['catchment_position'] = df['dist_out'] / df['max_dist_out']
     return df
 
+def up_connected_reach(df:'gpd.GeoDataFrame') -> gpd.GeoDataFrame:
+    for i, r in df.iterrows():
+        conRow = df[df['dn_connected_reach'] == r['reach_id']]
+        if conRow.shape[0] == 0:
+            ucr = np.nan
+        elif conRow.shape[0] == 1:
+            conID = conRow['reach_id'].iloc[0]
+            # check if in rch_id_up
+            rchUP = r['rch_id_up']
+            # print(f'row up ID: {rchUP}, theoretical UP:{conID}, rid: {r['reach_id']}')
+            if isinstance(rchUP, list):
+                if conID in rchUP:
+                    df.loc[i, 'up_connected_reach'] = conID
+                else:
+                    print(f"dn_connected_reach doesnt match rch_id_up: {i}, {r['reach_id']}")
+            else:
+                    print(f"dn_connected_reach doesnt match rch_id_up (RCH up NaN): {i}, {r['reach_id']}")
+        elif conRow.shape[0] >2 :
+            print('new_reach_definition/up_connected_reachError more than one morphological connection')    
+    return df
 
+def connected_ucr_dcr(df:'gpd.GeoDataFrame') -> gpd.GeoDataFrame:
+
+    for cri in df['combined_reach_id']:
+        rows = df[df['combined_reach_id'] == cri]
+        rows = rows.sort_values('river_segment_order')
+
+        for side in [['up', 0], ['dn', -1]]:
+            if rows.shape[0] == 1:
+                valRowId = rows[f'{side[0]}_connected_reach'].iloc[0]
+            else:
+                row = rows.iloc[side[1]]
+                valRowId = row[f'{side[0]}_connected_reach']
+        
+            if np.isnan(valRowId):
+                val = np.nan
+                
+            else:
+                val = df.loc[df['reach_id'] == valRowId, 'combined_reach_id'].iloc[0]
+
+            df.loc[rows.index, f'combined_reach_{side[0]}'] = val
+    return df
 
 def new_reach_definition(df, dfNode,min_reach_len_factor, directory, fileName, save = False):
     """Combine reaches based on width and angles between reaches"""
@@ -979,6 +1026,11 @@ def new_reach_definition(df, dfNode,min_reach_len_factor, directory, fileName, s
     ############################################
     df = river_catchment_position(df)
 
+    ############################################
+    # add up connected reach and connected combined up and dn reach
+    ############################################
+    df = up_connected_reach(df)
+    df = connected_ucr_dcr(df)
 
     if save == True:
         dfSave = df.copy()
@@ -995,7 +1047,23 @@ def new_reach_definition(df, dfNode,min_reach_len_factor, directory, fileName, s
             
             dfGroupSave.to_file(directory + f'results/new_segments/vector/{fileName}_{groupString}_reach_new_segments.gpkg', driver = 'GPKG')
             dfNodeSave.to_file(directory + f'results/new_segments/node/{fileName}_{groupString}_node_new_segments.gpkg', driver = 'GPKG')
+    
 
-        
     return df, dfNode
 
+def create_continent_new_reach(cs):
+
+    for c in cs:
+        print(c)
+        files = np.sort(glob(directory +f'results/new_segments/vector/{c}_??_*.gpkg'))
+        print(files)
+        for i, f in enumerate(files):
+            D = gpd.read_file(f)
+            D['file_cont'] = f[-29:-27]
+            D['file_id']   = f[-26:-24]
+            if i == 0:
+                dfT = D.copy()
+            else:
+                dfT = pd.concat([dfT, D])
+        dfT['file'] = dfT['file_cont'] + '_' + dfT['file_id']
+        dfT.to_file(directory + f'results/new_segments/vector_cont/{c}_reaches.gpkg', driver = 'GPKG')

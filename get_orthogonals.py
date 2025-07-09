@@ -42,10 +42,10 @@ def remove_trailing_missing(arr, missing):
         else: # only missing values at the end
             return arr[:last_non_missing_idx + 1]  
 
+
 def get_slope_values(slope_line, raster, slope_samples, demFillValeu):
                 
     slope_line_angleP, slope_line_angleM = create_angled_lines(slope_line, 50)
-
 
     D, P     = extract_slope_along_raster_line(raster, 
                                                     slope_line, 
@@ -87,7 +87,8 @@ def get_orthogonals(line,df:'gpd.GeoDataSeries',
                     reachCRS:str, DEMprojection,
                     cross_distance:int,
                     demFillValeu, demVRT,
-                    directory:str, slope_samples = 100):
+                    directory:str, slope_samples = 100,
+                    maxCrossDistance = 30000):
     """
     Function that creates lines at approximately right angles with the river 
     and determines the slope of these lines.\n
@@ -123,18 +124,19 @@ def get_orthogonals(line,df:'gpd.GeoDataSeries',
     If confining slope line intersects with the centerline the line is cutoff at the centerline. 
     This can create differences in length between the inner and outer bend
     """
+
+    
+    
     ##############################
     missingVal = 99999
-
 
     ##############################
     # open raster
     ##############################
     increasedBuffer = 1.2 # Extra buffer size
     demWidth        = np.max(bendWidths) * increasedBuffer
-    # raster,_ = find_dem_FAB(df, demWidth*cross_distance, dfDemBounds, 
-    #                 reachCRS, DEMprojection)
-    raster = get_raster_vrt(demVRT, df, demWidth*cross_distance, reachCRS, DEMprojection)
+    rasterSize      = demWidth*cross_distance if demWidth*cross_distance < maxCrossDistance else maxCrossDistance * increasedBuffer
+    raster = get_raster_vrt(demVRT, df, rasterSize, reachCRS, DEMprojection)
     if isinstance(raster, float):
         return  np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
     rb = shapely.box(*raster.rio.bounds()).exterior  
@@ -153,7 +155,6 @@ def get_orthogonals(line,df:'gpd.GeoDataSeries',
 
             AP        = line.interpolate(line.project(apex_points[i])) # project apex point onto the centerline
             APO       = apexO_points[i] # select apex origin point on inflection line
-
             # select bendWidth and bendLine
             bendWidth = bendWidths[i]
             bendLine  = bendLines[i]
@@ -163,19 +164,19 @@ def get_orthogonals(line,df:'gpd.GeoDataSeries',
             
 
             # check for each confinement line if it intersects with raster box
-            while AP.distance(rb) < (bendWidth*cross_distance): 
+            rasterSize = bendWidth*cross_distance if bendWidth*cross_distance < maxCrossDistance else maxCrossDistance
+            while AP.distance(rb) < (rasterSize): 
                 demWidth *= 1.2
                 raster.close()
                 # raster,_ = find_dem_FAB(df, demWidth*cross_distance, dfDemBounds, 
                 #                   reachCRS, DEMprojection)
-                raster = get_raster_vrt(demVRT, df, demWidth*cross_distance, reachCRS, DEMprojection)
+                raster = get_raster_vrt(demVRT, df, rasterSize, reachCRS, DEMprojection)
                 rb = shapely.box(*raster.rio.bounds()).exterior
 
 
             ##############################
             # Create confinement lines
             ##############################
-
             D, E = extend_apex(AP, APO, infLines[i], bendWidth, amplitudes[i], cross_distance)
             slope_line_out = LineString([AP, D])
             slope_line_inn = LineString([AP, E])    
@@ -186,11 +187,9 @@ def get_orthogonals(line,df:'gpd.GeoDataSeries',
                 leftRight[i] = 1
             else:
                 leftRight[i] = 0
-            
 
             slope_line_out = adjust_confinement_line(slope_line_out, line)
             slope_line_inn = adjust_confinement_line(slope_line_inn, line)
-            
             lineOut[i] = slope_line_out
             lineInn[i] = slope_line_inn
 
@@ -207,8 +206,6 @@ def get_orthogonals(line,df:'gpd.GeoDataSeries',
                  D_inn, D_innP, D_innM) = get_slope_values(slope_line_inn, raster, 
                                                            slope_samples, demFillValeu)
             
-
-
 
             ##############################
             # prepare output
@@ -257,7 +254,7 @@ def get_orthogonals(line,df:'gpd.GeoDataSeries',
             lineSlope = np.nan
         else:
             lineSlope = np.polyfit(lineDist,lineElev,1)[0]
-
+        
 
     else:
         (elevOut, elevInn, distOut, distInn,
