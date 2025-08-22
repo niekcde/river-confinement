@@ -420,8 +420,8 @@ def wa_connection(conRow:gpd.GeoDataFrame, conNodes:gpd.GeoDataFrame, row:pd.Ser
             nodeWidth, p1, p2 = find_connected_side_short_reach(row, nodes, conNodes.iloc[conSide[0]].geometry)
 
         else:
-            p1, p2    = nodes.iloc[side[0]].geometry, nodes.iloc[side[1]].geometry
-            side, sideChanged       = check_manual_added_width(nodes, side)
+            p1, p2            = nodes.iloc[side[0]].geometry, nodes.iloc[side[1]].geometry
+            side, sideChanged = check_manual_added_width(nodes, side)
             if nodes.shape[0] < sideChanged:
                 nodeWidth = nodes['width'].mean()
             else:
@@ -740,22 +740,22 @@ def split_files(df:'gpd.GeoDataFrame', threshold:'int') -> gpd.GeoDataFrame:
     - df: updated dataframe
     """
     df = df.copy()
-    edges = []
-    for i, r in df.iterrows():
-        DN = r['rch_id_dn_orig']
-        if isinstance(DN, list):
-            for dn in DN:
-                edges.append([r['reach_id'], dn])
+    # edges = []
+    # for i, r in df.iterrows():
+    #     DN = r['rch_id_dn_orig']
+    #     if isinstance(DN, list):
+    #         for dn in DN:
+    #             edges.append([r['reach_id'], dn])
     
-    G = nx.Graph()
-    G.add_edges_from(edges)
+    # G = nx.Graph()
+    # G.add_edges_from(edges)
 
-    networks = list(nx.connected_components(G))
-    dfN = pd.DataFrame(networks)
-    dfN = dfN.unstack().reset_index(name='reach_id')[['level_1', 'reach_id']]
-    dfN = dfN.sort_values('level_1').dropna().rename(columns={"level_1": "networkGraph"})
+    # networks = list(nx.connected_components(G))
+    # dfN = pd.DataFrame(networks)
+    # dfN = dfN.unstack().reset_index(name='reach_id')[['level_1', 'reach_id']]
+    # dfN = dfN.sort_values('level_1').dropna().rename(columns={"level_1": "networkGraph"})
 
-    dfNS = dfN.groupby('networkGraph', as_index = False).size()
+    dfNS = df.groupby('networkGraph', as_index = False).size()
     dfNS['cumSum'] = dfNS['size'].cumsum()
 
     dfNS['networkGroup'] = -1
@@ -778,10 +778,10 @@ def split_files(df:'gpd.GeoDataFrame', threshold:'int') -> gpd.GeoDataFrame:
                 val = dfNS['networkGroup'].max() 
             dfNS.loc[group, 'networkGroup'] = val
 
-    dfN = dfN.merge(dfNS[['networkGraph', 'networkGroup']], how = 'left', on ='networkGraph')
+    df = df.merge(dfNS[['networkGraph', 'networkGroup']], how = 'left', on ='networkGraph')
 
 
-    df = df.merge(dfN, how = 'left', on = 'reach_id')
+    # df = df.merge(dfN, how = 'left', on = 'reach_id')
     return df
 
 def river_catchment_position(df):
@@ -873,6 +873,94 @@ def connected_ucr_dcr(df:'gpd.GeoDataFrame') -> gpd.GeoDataFrame:
             df.loc[rows.index, f'combined_reach_{side[0]}'] = val
     return df
 
+
+def find_connected_side_distOut(df1, df2, nodeRange = 5):
+    df1, df2 = df1.reset_index(), df2.reset_index()
+    vals1 = [(df1['dist_out'].min(), df1['dist_out'].idxmin()), (df1['dist_out'].max(), df1['dist_out'].idxmax())]
+    vals2 = [(df2['dist_out'].min(), df2['dist_out'].idxmin()), (df2['dist_out'].max(), df2['dist_out'].idxmax())]
+
+    closest = min(((v1, i1, v2, i2) for v1, i1 in vals1 for v2, i2 in vals2), key=lambda x: abs(x[0] - x[2]))
+
+    if closest[1] > 0:
+        rowConnect = list(np.arange(-1, -1*nodeRange-1,-1))
+    else:
+        rowConnect = list(np.arange(0, nodeRange))
+    return rowConnect
+
+def biggest_facc(df,dfN, dfNC,faccNodeSize = 5):
+        """Get reach with biggest facc. Biggest facc indicates mainstream reach.\n
+        Input:
+        - df: target reaches, reach values
+        - dfN: target reaches, node values
+        - dfNC: connected nodes, node values\n
+        output:
+        - reach_id with biggest facc."""
+        # add if equal rule
+        if df.shape[0] > 0:
+            conNodes = dfNC[dfNC['reach_id'] == dfNC['reach_id'].iloc[0]]
+            facc,width = [], []
+            useVal = 'facc'
+            for i, r in df.iterrows():
+                tn   = dfN[dfN['reach_id'] == r['reach_id']]
+                # side = find_connected_side(tn, conNodes, faccNodeSize)
+                side = find_connected_side_distOut(tn, conNodes, faccNodeSize)
+                if faccNodeSize > tn.shape[0]:
+                    side = np.arange(0,tn.shape[0])
+                
+                V = tn.iloc[side][['facc', 'width']].values
+                F, W = V[:,0], V[:,1]
+                if np.all(F == F[0]):
+                     useVal = 'width'
+                elif np.all(W == W[0]):
+                     useVal = 'facc'
+                facc.append(F.min()), width.append(W.mean())
+            useVar = facc if useVal == 'facc' else width
+            val = df.iloc[np.argmax(useVar)]['reach_id']
+        else:
+            val = df['reach_id'].values[0]        
+
+        return val
+
+def find_connection_facc(df, dfN, junctionReaches):
+
+    D = junctionReaches[junctionReaches['dn'] == False]
+    U = junctionReaches[junctionReaches['up'] == False]
+
+    junctionReachIDS = junctionReaches['reach_id'].unique()
+
+    connectedRows     = df[df['reach_id'].isin(junctionReachIDS)]
+    connectedNodeRows = dfN[dfN['reach_id'].isin(junctionReachIDS)]
+
+
+    Ur = connectedRows[connectedRows['reach_id'].isin(U['reach_id'])]
+    Un = connectedNodeRows[connectedNodeRows['reach_id'].isin(U['reach_id'])]
+
+    Dr = connectedRows[connectedRows['reach_id'].isin(D['reach_id'])]
+    Dn = connectedNodeRows[connectedNodeRows['reach_id'].isin(D['reach_id'])]
+    
+
+    mainUp, mainDn = biggest_facc(Ur, Un, Dn, 5), biggest_facc(Dr, Dn, Un, 5)
+    return mainUp, mainDn
+
+def get_connected_up_dn_reach_facc(df, dfNode, dfNodeConnection):
+    for network in dfNodeConnection['networkGraph'].unique():
+        
+        dfNetworkNodes = dfNodeConnection[dfNodeConnection['networkGraph'] == network]
+        dfNet     = df[df['networkGraph'] == network]
+        dfNetNode = dfNode[dfNode['reach_id'].isin(dfNet['reach_id'].unique())]
+        for junctionNode in dfNetworkNodes['Node_id'].unique():
+
+            junctionReaches = dfNetworkNodes[dfNetworkNodes.Node_id == junctionNode]
+
+            if (junctionReaches.shape[0] > 1):
+                mainCon = find_connection_facc(dfNet, dfNetNode, junctionReaches)
+            else:
+                print('no connections')
+            df.loc[df[df['reach_id'] == mainCon[0]].index, f'dn_connected_reach'] = mainCon[1]
+            df.loc[df[df['reach_id'] == mainCon[1]].index, f'up_connected_reach'] = mainCon[0]
+    return df
+
+
 def new_reach_definition(df, dfNode,min_reach_len_factor, directory, fileName, save = False):
     """Combine reaches based on width and angles between reaches"""
 
@@ -880,26 +968,44 @@ def new_reach_definition(df, dfNode,min_reach_len_factor, directory, fileName, s
 
     df, dfNode       = filter_SWORD_input(df, dfNode)
 
+    ############################################
+    # Create networkgraph for connected reaches (based on original connections)
+    ############################################
+    edges = []
+    for i, r in df.iterrows():
+        DN = r['rch_id_dn_orig']
+        if isinstance(DN, list):
+            for dn in DN:
+                edges.append([r['reach_id'], dn])
+
+    G = nx.Graph()
+    G.add_edges_from(edges)
+
+    networks = list(nx.connected_components(G))
+    dfN = pd.DataFrame(networks)
+    dfN = dfN.unstack().reset_index(name='reach_id')[['level_1', 'reach_id']]
+    dfN = dfN.sort_values('level_1').dropna().rename(columns={"level_1": "networkGraph"})
+    df  = df.merge(dfN, how = 'left', on = 'reach_id')
+
     # select only included reaches for junction nodes
     dfNodeConnection = get_connection_nodes(df[df['include_flag'] == '0'])
-    
+    dfNodeConnection = dfNodeConnection.merge(df[['reach_id', 'networkGraph']], how = 'left', on = 'reach_id')
+
     ############################################
     # Create downstream connection. Loop over all included reaches
     ############################################
-    wrongNormalReaches, wrongHOReaches = [], []
-    for i, r in df[df['include_flag'] == '0'].iterrows():
-        IND = df[df.reach_id == r.reach_id].index[0]
-        dn_reach, wrongNormal, wrongHO = get_connected_reach(r, 'dn', df, dfNode, dfNodeConnection)
-        df.loc[IND, 'dn_connected_reach'] = dn_reach
-        wrongNormalReaches.append(wrongNormal)
-        wrongHOReaches.append(wrongHO)
-    df['dn_connected_reach'] = df['dn_connected_reach'].astype(float)
-
-
-    wrongNormalReaches =  dfNodeConnection[dfNodeConnection.Node_id.isin(wrongNormalReaches)].reach_id.values
-    wrongHOReaches = np.array(wrongHOReaches)
-    wrongHOReaches = wrongHOReaches[~np.isnan(wrongHOReaches)].astype(int)
-
+    # wrongNormalReaches, wrongHOReaches = [], []
+    # for i, r in df[df['include_flag'] == '0'].iterrows():
+    #     IND = df[df.reach_id == r.reach_id].index[0]
+    #     dn_reach, wrongNormal, wrongHO = get_connected_reach(r, 'dn', df, dfNode, dfNodeConnection)
+    #     df.loc[IND, 'dn_connected_reach'] = dn_reach
+    #     wrongNormalReaches.append(wrongNormal)
+    #     wrongHOReaches.append(wrongHO)
+    # df['dn_connected_reach'] = df['dn_connected_reach'].astype(float)
+    # wrongNormalReaches =  dfNodeConnection[dfNodeConnection.Node_id.isin(wrongNormalReaches)].reach_id.values
+    # wrongHOReaches = np.array(wrongHOReaches)
+    # wrongHOReaches = wrongHOReaches[~np.isnan(wrongHOReaches)].astype(int)
+    df = get_connected_up_dn_reach_facc(df, dfNode, dfNodeConnection)
     ############################################
     # add river segment ID to dataframe
     ############################################

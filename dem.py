@@ -30,7 +30,6 @@ def df_add_row(df, folder, name, B):
     df = pd.concat([df, pd.DataFrame([newRow])], ignore_index=True)
     return df
 
-
 def find_dem_bounds(directory, projection):
     dem_boundary_file = directory + 'input_created/MERIT_dem_bounds.shp'
 
@@ -162,7 +161,6 @@ def find_dem_bounds_FAB(directory, demCRS, create_new = False):
         dfBounds = gpd.GeoDataFrame({'id':name, 'geometry':geom}, crs = demCRS)
         dfBounds.to_file(dem_boundary_file, driver = 'GPKG')
     return dfBounds
-
 
 def find_dem_FAB(rowIn:gpd.GeoDataFrame, bufferSize:int, dfDemBounds,
                  localCRS, demCRS:str='EPSG:4326') -> xarray.core.dataarray.DataArray:

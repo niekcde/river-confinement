@@ -42,7 +42,6 @@ def remove_trailing_missing(arr, missing):
         else: # only missing values at the end
             return arr[:last_non_missing_idx + 1]  
 
-
 def get_slope_values(slope_line, raster, slope_samples, demFillValeu):
                 
     slope_line_angleP, slope_line_angleM = create_angled_lines(slope_line, 50)
@@ -103,7 +102,7 @@ def get_orthogonals(line,df:'gpd.GeoDataSeries',
     - bendWidths: list of bendWidths
     - reachCRS: local utm projection
     - DEMprojection: projection of DEM
-    - width_input: reach max width --> check for raster size
+    - width_input: reach width --> check for raster size
     - cross_distance: the factor that half the width is multiplied with to determine the length of 
                       the line created at right angels with the river. 
     - demFillValue: fill value for the selected DEM
@@ -118,7 +117,7 @@ def get_orthogonals(line,df:'gpd.GeoDataSeries',
     - distance innerbend 
     - linestring of outerbend
     - linestring of innerbend
-    - binary for left right. 1 is left, 0 is right
+    - binary for matching left with outer bend. 1 is left, 0 is right
     - centerlineslope\n
 
     If confining slope line intersects with the centerline the line is cutoff at the centerline. 
@@ -188,6 +187,7 @@ def get_orthogonals(line,df:'gpd.GeoDataSeries',
             else:
                 leftRight[i] = 0
 
+            # reduce length if there is a self intersection
             slope_line_out = adjust_confinement_line(slope_line_out, line)
             slope_line_inn = adjust_confinement_line(slope_line_inn, line)
             lineOut[i] = slope_line_out

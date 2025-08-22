@@ -125,7 +125,7 @@ def inflection_points(vector : 'shapely.geometry.LineString',
 
             bendLine  = create_bend_line(infLine, line)
             bendWidth, bendMaxWidth = get_bend_width(line, bendLine, dfNode, dfR)
-            bendWidthCalc = bendMaxWidth 
+            bendWidthCalc = bendWidth 
 
             # Compute directed Hausdorff distance from bendLine to inflection line
             apexDist = shapely.hausdorff_distance(bendLine, infLine, 0.5)
@@ -209,7 +209,7 @@ def inflection_points(vector : 'shapely.geometry.LineString',
                                                                        infLine_coords)
                 
 
-                apexPoint = Point(bendLine_coords[idxBendLine])
+                apexPoint       = Point(bendLine_coords[idxBendLine])
                 apexOriginPoint = Point(infLine_coords[idxInfLine])
                 if apexOriginPoint.distance(bendLine) < 10:
                     apexDist = 0

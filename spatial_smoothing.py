@@ -3,7 +3,7 @@ from datetime import datetime as dt
 from tqdm import tqdm
 
 import os
-
+from glob import glob
 import networkx as nx
 import numpy as np
 import pickle
@@ -21,7 +21,7 @@ directory = '/scratch/6256481/'
 
 import sys
 sys.path.insert(0, directory + f'python/py_code/')
-
+from support import concat_nc_smooth_files
 #%%
 def create_multiprocess_iterator(df):
     multiIterator = df.groupby(['file', 'networkGraph'], as_index = False)['index'].count()
@@ -173,8 +173,10 @@ def smooth_attributes(sid, attr, length_dict, df, max_dist=20000, max_neighbors=
     mask      = dist_vals < max_dist
     neighbors = dist_keys[mask][:max_neighbors]
     dists     = dist_vals[mask][:max_neighbors]
-    if len(neighbors) == 0:
-        return df.loc[df['bendID'] == sid, attr].values[0]
+    if len(neighbors) == 1:
+        vals = df.loc[df['bendID'] == sid, attr].values[0]
+        vals = np.concatenate([vals, np.array([0,0,0,0])])
+        return vals
 
     dfF = df.loc[df['bendID'].isin(neighbors), ['bendLen'] +['bendID']+ attr]
     vals  = dfF.set_index('bendID').loc[neighbors].reset_index().values
@@ -183,102 +185,107 @@ def smooth_attributes(sid, attr, length_dict, df, max_dist=20000, max_neighbors=
     weights = np.exp(- (dists ** 2) / (2 * dist_sigma ** 2))
     weights /= weights.sum()
 
-    return np.average(vals[:,2:],  weights=weights, axis = 0)
+    # weighted average
+    wmean   = np.average(vals[:,2:],  weights=weights, axis = 0)
+    lenW = len(weights)
+    # Weighted std
+    wstd = np.sqrt(np.array(( weights@(vals[:,2:]-wmean)**2) / (((lenW-1)/lenW)*np.sum(weights)) , dtype = float))
+
+    return np.concatenate([wmean, wstd])
 
 
 def run_bend_smoothing(cont, df):
-    try:
-        print('Run bend Smoothing', cont)
-        df = df[df['file'] == cont].copy()
-        # add rank to bends withing combinedReach
-        df['bendRank'] = df.groupby('combined_reach_id')['bendDistOut'].rank(ascending=False).astype(int)
-        df['bendID']   = df['combined_reach_id'].astype(int).astype(str) + '_' + df['bendRank'].astype(str)
 
-        df = df.sort_values(['file', 'combined_reach_id', 'bendRank'])
-        
-        ldFolder = directory + f'results/single_smoothed/length_dict_{cont}.pkl'
-        if os.path.exists(ldFolder):
-            with open(ldFolder, 'rb') as f:
-                ld = pickle.load(f)
-        else:
-            ld = bend_neighbor_graph(df)
+    print('Run bend Smoothing', cont)
+    df = df[df['file'] == cont].copy()
+    # add rank to bends withing combinedReach
+    df['bendRank'] = df.groupby('combined_reach_id')['bendDistOut'].rank(ascending=False).astype(int)
+    df['bendID']   = df['combined_reach_id'].astype(int).astype(str) + '_' + df['bendRank'].astype(str)
+
+    df = df.sort_values(['file', 'combined_reach_id', 'bendRank'])
+    
+    # ldFolder = directory + f'results/single_smoothed/length_dict_{cont}.pkl'
+    # if os.path.exists(ldFolder):
+    #     with open(ldFolder, 'rb') as f:
+    #         ld = pickle.load(f)
+    # else:
+    ld = bend_neighbor_graph(df)
 
 
-        attr = ['slope_left_normalized', 'slope_right_normalized',
-                        'slope_out_normalized','slope_inn_normalized']
-        attrS = [f'{a}_smooth' for a in attr]
-        for sid in tqdm(df['bendID'].values, position=0, leave=True):
-            df.loc[df['bendID'] == sid, attrS] = smooth_attributes(sid, attr, ld, df, max_neighbors=5)
+    attr = ['slope_left_normalized', 'slope_right_normalized',
+                    'slope_out_normalized','slope_inn_normalized']
+    attrS   = [f'{a}_smooth' for a in attr] + [f'{a}_smoothSTD' for a in attr]
+    for sid in tqdm(df['bendID'].values, position=0, leave=True):
+        df.loc[df['bendID'] == sid, attrS] = smooth_attributes(sid, attr, ld, df, max_neighbors=5)
 
-        print('Create smooth vars done')
-        dfNC = df.to_xarray()
-        ncFile = directory + f'results/single_smoothed/{cont}_{cross}_{hf}_smoothed.nc'
-        if os.path.exists(ncFile):
-            os.remove(ncFile)
+    print('Create smooth vars done')
+    dfNC = df.to_xarray()
+    ncFile = directory + f'results/single_smoothed/{cont}_{cross}_{hf}_smoothed.nc'
+    if os.path.exists(ncFile):
+        os.remove(ncFile)
 
-        dfNC.to_netcdf(ncFile)
-    except:
-        print('crash?')
+    dfNC.to_netcdf(ncFile)
+
 #%%
 cross = 50
-hf    = 2
-hf    = f'{hf}' if hf > 10 else f'0{hf}'
+hfList    = [2,3,4]
+for hf in hfList:
+    hf    = f'{hf}' if hf > 10 else f'0{hf}'
 
-f = directory + f'results/single_values/global_{cross}_{hf}_conf.nc'
-ds = xr.open_dataset(f)
+    f = directory + f'results/single_values/global_{cross}_{hf}_conf.nc'
+    ds = xr.open_dataset(f)
 
-dsSubset = ds[[
-    'combined_reach_id', 'reach_id', 'file', 'bendLen', 'up_reach_id', 
-    'networkGraph', 'networkGroup', 'river_name',
-    'dn_connected_reach', 'rch_id_dn', 'rch_id_dn_orig', 'rch_id_up', 'rch_id_up_orig',
-    'combined_reach_up', 'combined_reach_dn',
-    'ER_inn', 'ER_out', 'slope_inn', 'slope_out',
-    'ER_left', 'ER_right', 'slope_left', 'slope_right',
-    'apex', 'catchment_position', 'bendWidths', 'bendMaxWidths',
-    'cp_height', 'cm_height','bendDistOut','max_dist_out','bendHeight',
-    'bendSin','sin', 'ang', 
-    'conFactor', 'catchment_position', 'combined_reach_len'
-    ]]
-df = dsSubset.to_dataframe().reset_index()
+    dsSubset = ds[[
+        'combined_reach_id', 'reach_id', 'file', 'bendLen', 'up_reach_id', 
+        'networkGraph', 'networkGroup', 'river_name',
+        'dn_connected_reach', 'rch_id_dn', 'rch_id_dn_orig', 'rch_id_up', 'rch_id_up_orig',
+        'combined_reach_up', 'combined_reach_dn',
+        'ER_inn', 'ER_out', 'slope_inn', 'slope_out',
+        'ER_left', 'ER_right', 'slope_left', 'slope_right',
+        'apex', 'catchment_position', 'bendWidths', 'bendMaxWidths',
+        'cp_height', 'cm_height','bendDistOut','max_dist_out','bendHeight',
+        'bendSin','sin', 'ang', 
+        'conFactor', 'catchment_position', 'combined_reach_len'
+        ]]
+    df = dsSubset.to_dataframe().reset_index()
 
-df['ER_max_inout']    = df[['ER_inn', 'ER_out']].max(axis = 1)
-df['slope_max_inout'] = df[['slope_inn', 'slope_out']].max(axis = 1)
-
-
-df['slope_diff_bendSide']     = df['slope_inn']     - df['slope_out']
-df['slope_diff_bendSide_abs'] = abs(df['slope_inn'] - df['slope_out'])
-df['slope_diff_side']         = df['slope_left']    - df['slope_right']
+    df['ER_max_inout']    = df[['ER_inn', 'ER_out']].max(axis = 1)
+    df['slope_max_inout'] = df[['slope_inn', 'slope_out']].max(axis = 1)
 
 
-df['ER_diff_bendSide']     = df['ER_inn']     - df['ER_out']
-df['ER_diff_bendSide_abs'] = abs(df['ER_inn'] - df['ER_out'])
-df['ER_diff_side']         = df['ER_left']    - df['ER_right']
-
-df['nonDimAmp'] = df['apex'] / df['bendMaxWidths']
-
-df['catch_height'] = df['bendHeight'] * df['catchment_position']
-
-df['slope_max'] = (df['cm_height'] - df['cp_height']) / (df['bendMaxWidths']*0.5)
-df['slope_out_normalized'] = df['slope_out']   / df['slope_max']
-df['slope_inn_normalized'] = df['slope_inn']   / df['slope_max']
-df['slope_left_normalized'] = df['slope_left']  / df['slope_max']
-df['slope_right_normalized'] = df['slope_right'] / df['slope_max']
+    df['slope_diff_bendSide']     = df['slope_inn']     - df['slope_out']
+    df['slope_diff_bendSide_abs'] = abs(df['slope_inn'] - df['slope_out'])
+    df['slope_diff_side']         = df['slope_left']    - df['slope_right']
 
 
-df['bend_catch_pos'] = df['bendDistOut'] / df['max_dist_out']
-df['glob_reach_id'] = df.groupby(['file', 'combined_reach_id']).ngroup()
+    df['ER_diff_bendSide']     = df['ER_inn']     - df['ER_out']
+    df['ER_diff_bendSide_abs'] = abs(df['ER_inn'] - df['ER_out'])
+    df['ER_diff_side']         = df['ER_left']    - df['ER_right']
+
+    df['nonDimAmp'] = df['apex'] / df['bendWidths']
+
+    df['catch_height'] = df['bendHeight'] * df['catchment_position']
+
+    df['slope_max'] = (df['cm_height'] - df['cp_height']) / (df['bendWidths']*0.5)
+    df['slope_out_normalized']   = df['slope_out']   / df['slope_max']
+    df['slope_inn_normalized']   = df['slope_inn']   / df['slope_max']
+    df['slope_left_normalized']  = df['slope_left']  / df['slope_max']
+    df['slope_right_normalized'] = df['slope_right'] / df['slope_max']
 
 
-print('start Multi')
-dt1 = dt.now()
-if __name__ == '__main__':
-    partial_func = partial(run_bend_smoothing, df=df)
-    continents = ['oc', 'as', 'sa', 'af', 'eu', 'na']
-    with Pool(6) as pool:
-        pool.map(partial_func, continents)
-        
+    df['bend_catch_pos'] = df['bendDistOut'] / df['max_dist_out']
+    df['glob_reach_id'] = df.groupby(['file', 'combined_reach_id']).ngroup()
 
-# multiResults = list(results)
-print(f'Create nodes and edges finished: {dt.now() - dt1}')
-#%%
+    print('start Multi')
+    dt1 = dt.now()
+    if __name__ == '__main__':
+        partial_func = partial(run_bend_smoothing, df=df)
+        continents = ['oc', 'as', 'sa', 'af', 'eu', 'na']
+        with Pool(6) as pool:
+            pool.map(partial_func, continents)
+            
 
+    # multiResults = list(results)
+    print(f'Create nodes and edges finished: {dt.now() - dt1}')
+
+    concat_nc_smooth_files(directory, cross, hf)

@@ -19,8 +19,8 @@ directory = '/scratch/6256481/'
 crossFactor  = 50
 heightFactor = [2, 0.5, 1, 1.5, 3, 4, 6, 8, 10, 15]
 conFactor    = [50,10]
-createNewSingleVal = False
-createNewFactor    = False
+createNewSingleVal = True
+createNewFactor    = True
 allResultFiles = np.sort(glob(directory + f'results/single_values/??_??_{crossFactor}.csv'))
 
 dt1 = dt2 = dt3 = dt.now()
@@ -29,7 +29,6 @@ print(f'start Code: {dt1}')
 ################################################
 # Create singe bend value files
 ################################################
-
 if createNewSingleVal == True:
     print('Start transform results in single row values')
     files = np.sort(glob(directory + f'results/all/??_??_{crossFactor}.csv'))
@@ -45,6 +44,7 @@ if createNewSingleVal == True:
     
     dt2 = dt.now()
     print(f'Open_to_single_apex Finished: {dt2-dt1}')
+    allResultFiles = np.sort(glob(directory + f'results/single_values/??_??_{crossFactor}.csv'))
 
 ################################################
 # get confinement factor values

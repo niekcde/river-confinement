@@ -25,11 +25,11 @@ from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 
 # import custom modules
 from calc_functions import get_entrenchment_slope_intersect,\
-      get_entrenchment_slope_no_intersect, slope_curvature, confinement_values
+      get_entrenchment_slope_no_intersect, slope_curvature
 # from confinement_margin import confinement_margin
 
 
-def find_connected_side(node1, node2):
+def find_connected_side(node1, node2, nodeRange = 2):
     """
     Find the connected nodes to different reach. The values can be either [0,1] or [-1, -2]
     input:
@@ -41,9 +41,9 @@ def find_connected_side(node1, node2):
     nodeS = node2.geometry.distance(node1.geometry.iloc[0]).min()
     nodeE = node2.geometry.distance(node1.geometry.iloc[-1]).min()
     if nodeS > nodeE:
-        rowConnect = [-1, -2]
+        rowConnect = list(np.arange(-1, -1*nodeRange-1,-1))
     else:
-        rowConnect = [0,1]
+        rowConnect = list(np.arange(0, nodeRange))
     return rowConnect
 
 def vw_one_side(hp, d, threshold):
@@ -1063,3 +1063,19 @@ def open_single_values(files):
 #     m = (FMax - FMin) / (x.max() - x.min())
 #     b = FMin - (m * x.min())
 #     return (m * x + b)
+import xarray as xr
+
+def concat_nc_smooth_files(directory, cross, hf = 2):
+    dsList = []
+
+    for c in ['af', 'as', 'sa', 'na', 'oc', 'eu']:
+        print(c)
+        f = directory + f'results/single_smoothed/{c}_{cross}_{hf}_smoothed.nc'
+        dsTemp = xr.open_dataset(f)
+        dsList.append(dsTemp)
+        
+    ds = xr.concat(dsList, dim='index')
+    fName = directory + f'results/single_smoothed/global_{cross}_{hf}_smoothed.nc'
+    if os.path.exists(fName):
+        os.remove(fName)
+    ds.to_netcdf(fName)

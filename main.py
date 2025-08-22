@@ -141,7 +141,7 @@ def main(multiInput):
                 factorRow       = abs(dfSF['combined_reach_width'] - factorWidth).argsort()
                 smoothingFactor = dfSF.loc[factorRow, 'smoothFactor'].iloc[0]
                 
-                smoothing_window = smoothingFactor*int(factorWidth) # Smoothing window based on mean node max width
+                smoothing_window = smoothingFactor*int(factorWidth) # Smoothing window based on width
                     
                 # Smooth centerline
                 combinedLine = SG_smoothing(combinedLine, smoothing_window, factorWidth)
@@ -221,7 +221,7 @@ def main(multiInput):
                     leftRight, lineSlope, bendH) = get_orthogonals(combinedLine, dfReach,
                                                             apexP, apexPO, apex, 
                                                             infLines, bendLines, 
-                                                            bendMaxWidths,
+                                                            bendWidths,
                                                             reachCRS, 'EPSG:4326',
                                                             confFactor, 
                                                             -9999, demVRT,
@@ -334,21 +334,21 @@ def run_create_new_reaches_main(continents:'list'):
         file_sorting(dfT, directory)
 
 
+# create_new_reaches_main('af')
+create_new    = True
+if create_new == True:
+    run_create_new_reaches_main(['af', 'eu', 'na', 'sa', 'as', 'oc'])
+print('run new reach def ready')
 
-# create_new      = False
-# if create_new == True:
-#     run_create_new_reaches_main(['af', 'eu', 'na', 'sa', 'as', 'oc'])
-# print('run new reach def ready')
-
-# # newsegment files
+# newsegment files
 # dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
 # dfFiles = dfFiles.sort_values('size', ascending = False)
 # dfFiles = dfFiles.sort_values('filePath', ascending = True)
-# dfFiles = dfFiles[dfFiles['file'].str.startswith('af')].sort_values('size', ascending = False)
+# dfFiles = dfFiles[dfFiles['file'].str.startswith('sa')].sort_values('size', ascending = False)
 
 # files = dfFiles['filePath'].values
 
-# print(files[4])
+# print(files)
 # files = [files[4]]
 
 # confFactor = 50
@@ -363,34 +363,34 @@ def run_create_new_reaches_main(continents:'list'):
 
 
 #%%
-continentInput       = sys.argv[1]  # First argument
-number_of_processors = int(sys.argv[2])  # Second argument
+# continentInput       = sys.argv[1]  # First argument
+# number_of_processors = int(sys.argv[2])  # Second argument
 
-create_new      = False
-if create_new == True:
-    run_create_new_reaches_main([continentInput])
-
-
-dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
-dfFiles = dfFiles[dfFiles['file'].str.startswith(continentInput)].sort_values('size', ascending = False)
-files = dfFiles['filePath'].values
-print(files, continentInput, number_of_processors)
-print()
-
-confFactor = 50
-removeFiles = glob.glob(directory + f'results/all/{continentInput}*_{confFactor}.csv')
-for rmf in removeFiles:
-    os.remove(rmf)
-
-multiInput = [[f, confFactor] for f in files]
-# multiInput = [[files, confFactor]]
-# print(multiInput, number_of_processors)
-if __name__ == '__main__':
-    print('__main__')
-    with Pool(number_of_processors) as p:
-        p.imap(main, multiInput)
-        p.close()
-        p.join()
+# create_new      = False
+# if create_new == True:
+#     run_create_new_reaches_main([continentInput])
 
 
-print('code Finished')
+# dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
+# dfFiles = dfFiles[dfFiles['file'].str.startswith(continentInput)].sort_values('size', ascending = False)
+# files = dfFiles['filePath'].values
+# print(files, continentInput, number_of_processors)
+# print()
+
+# confFactor = 50
+# removeFiles = glob.glob(directory + f'results/all/{continentInput}*_{confFactor}.csv')
+# for rmf in removeFiles:
+#     os.remove(rmf)
+
+# multiInput = [[f, confFactor] for f in files]
+# # multiInput = [[files, confFactor]]
+# # print(multiInput, number_of_processors)
+# if __name__ == '__main__':
+#     print('__main__')
+#     with Pool(number_of_processors) as p:
+#         p.imap(main, multiInput)
+#         p.close()
+#         p.join()
+
+
+# print('code Finished')

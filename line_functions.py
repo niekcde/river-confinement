@@ -405,6 +405,7 @@ def get_bend_width(line, bendLine, dfN, dfR):
             meanMaxWidth = reaches['max_width'].mean()
 
     return meanWidth, meanMaxWidth
+
 from datetime import datetime as dt
 def get_bend_dist_out(line, bendLine, dfN):
     # region Fold Start

@@ -11,31 +11,28 @@ def  subMain(x):
     print(x)
 
 def main(x):
-    print(x)
-    subP = x *[x]
+    # print(x)
+    subP = 2 *[x]
     # time.sleep(x)
-    with Pool(2) as p:
-        A = p.imap(subMain, subP)
-        p.close()
-        # # wait for all issued task to complete
-        p.join()
-    return (x*x, x)
+    return subP
 
 
 tm1 = dt.now()
-
+import numpy as np
+import pandas as pd
 if __name__ == '__main__':
     with Pool(2) as p:
         A = p.imap(main, [1,5, 3, 8, 10, 15,3])
         p.close()
         # # wait for all issued task to complete
+    
         p.join()
+# print('print results')
+# print('A: ', list(A))    
 
-# print('A: ', A)
-# print('P: ', p)
-# for i in A:
-#     print(i[0], i[1])
-# print(dt.now() - tm1)
+# res = list(A)
+# print(res)
+print(pd.DataFrame(list(A), columns = ["A", 'E']))
 
 # SuperFastPython.com
 # example of parallel imap() with the process pool
@@ -65,55 +62,55 @@ if __name__ == '__main__':
 
 # print(dt.now() - tm1)
 
-#%%
-import logging
-from multiprocessing import Pool
+# #%%
+# import logging
+# from multiprocessing import Pool
 
-# Configure logging for all processes
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [PID %(process)d - %(processName)s] %(message)s",
-)
+# # Configure logging for all processes
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format="%(asctime)s [PID %(process)d - %(processName)s] %(message)s",
+# )
 
-def nested_worker(task_id):
-    """
-    Function to be executed by subprocesses of a worker.
-    """
-    logging.info(f"Nested worker for task {task_id} is running. PID: {os.getpid()}")
-    # Simulate some work
-    return f"Nested task {task_id} completed by PID {os.getpid()}"
+# def nested_worker(task_id):
+#     """
+#     Function to be executed by subprocesses of a worker.
+#     """
+#     logging.info(f"Nested worker for task {task_id} is running. PID: {os.getpid()}")
+#     # Simulate some work
+#     return f"Nested task {task_id} completed by PID {os.getpid()}"
 
-def worker_function(main_task_id):
-    """
-    Main worker function, which itself spawns subprocesses.
-    """
-    logging.info(f"Worker {main_task_id} is starting. PID: {os.getpid()}")
+# def worker_function(main_task_id):
+#     """
+#     Main worker function, which itself spawns subprocesses.
+#     """
+#     logging.info(f"Worker {main_task_id} is starting. PID: {os.getpid()}")
 
-    # Simulate a list of subtasks for this worker
-    subtasks = [f"{main_task_id}-{i}" for i in range(3)]
+#     # Simulate a list of subtasks for this worker
+#     subtasks = [f"{main_task_id}-{i}" for i in range(3)]
 
-    # Use multiprocessing to process these subtasks
-    with Pool(processes=2) as pool:
-        results = pool.map(nested_worker, subtasks)
+#     # Use multiprocessing to process these subtasks
+#     with Pool(processes=2) as pool:
+#         results = pool.map(nested_worker, subtasks)
 
-    logging.info(f"Worker {main_task_id} completed. Results: {results}")
-    return f"Worker {main_task_id} finished"
+#     logging.info(f"Worker {main_task_id} completed. Results: {results}")
+#     return f"Worker {main_task_id} finished"
 
-def main():
-    """
-    Main process that spawns workers.
-    """
-    logging.info("Main process is starting.")
+# def main():
+#     """
+#     Main process that spawns workers.
+#     """
+#     logging.info("Main process is starting.")
 
-    # List of main tasks
-    main_tasks = range(4)  # 4 main tasks
+#     # List of main tasks
+#     main_tasks = range(4)  # 4 main tasks
 
-    # Use multiprocessing to handle main tasks
-    with Pool(processes=2) as pool:
-        results = pool.map(worker_function, main_tasks)
+#     # Use multiprocessing to handle main tasks
+#     with Pool(processes=2) as pool:
+#         results = pool.map(worker_function, main_tasks)
 
-    logging.info(f"All tasks completed. Final results: {results}")
+#     logging.info(f"All tasks completed. Final results: {results}")
 
-if __name__ == "__main__":
-    main()
-# %%
+# if __name__ == "__main__":
+#     main()
+# # %%

@@ -247,16 +247,19 @@ def x_y_intercept(x, y , threshold, w, adjust_y = False, adjust_height = 0):
     else:
         return np.nan
 
-def confinement_slope(intercept, profile, distance,centerPointHeight, confHeight, widthT, normalize = True):
+def confinement_slope(intercept, profile, distance,centerPointHeight, confHeight, width, normalize = True):
     heightDiff = confHeight - centerPointHeight
-    maxSlope = heightDiff / (widthT / 2)
+    maxSlope = heightDiff / (width / 2)
 
     if np.isnan(intercept):
-        slope = slope_with_intercept(distance, profile, centerPointHeight)
+        if np.max(distance) < (width / 2):
+            return np.nan
+        else:
+            slope = slope_with_intercept(distance, profile, centerPointHeight)
     else:
         
         
-        if intercept < (widthT / 2):
+        if intercept < (width / 2):
             slope = maxSlope
         else:
             slope = heightDiff / intercept
@@ -272,6 +275,9 @@ def confinement_ratio(intercept, width):
         ratio = np.nan
     else:
         ratio = intercept / (width)
+        print(ratio)
+        if intercept < (width/2):
+            ratio = 0.5
     return ratio
 
 def get_low_center_point(po, pi, cdo, cdi, width):
@@ -297,6 +303,10 @@ def get_low_center_point(po, pi, cdo, cdi, width):
 
         return np.min([poRiv.min(), piRiv.min()])
 
+# Function to convert mm to inches
+def mm_to_inch(mm):
+    return mm / 25.4
+
 def confinement_values(po, pi, cdo, cdi,widthW, widthT, factor):
     """
     Calculate confinement slope and ratio of intercept with river width.\n
@@ -314,21 +324,22 @@ def confinement_values(po, pi, cdo, cdi,widthW, widthT, factor):
     - ER Out/Inn: Ratio of valley edge intercept and river width for outer and inner bend
     """
 
-    centerPointHeight = get_low_center_point(po, pi, cdo, cdi, widthT)
+    centerPointHeight = get_low_center_point(po, pi, cdo, cdi, widthW)
     confinementHeight = (widthW * factor) + centerPointHeight
 
     if (isinstance(po, int)):
         poIntercept = slopeOut = EROut = np.nan
     else:
-        poIntercept = x_y_intercept(cdo, po, confinementHeight, widthT/2, True, centerPointHeight)
-        slopeOut    = confinement_slope(poIntercept, po, cdo, centerPointHeight, confinementHeight, widthT, False)
-        EROut       = confinement_ratio(poIntercept, widthT)
+        poIntercept = x_y_intercept(cdo, po, confinementHeight, widthW/2, True, centerPointHeight)
+        print(widthW, poIntercept, confinementHeight, centerPointHeight)
+        slopeOut    = confinement_slope(poIntercept, po, cdo, centerPointHeight, confinementHeight, widthW, False)
+        EROut       = confinement_ratio(poIntercept, widthW)
     if (isinstance(pi, int)):
         piIntercept = slopeInn = ERInn = np.nan
     else:
-        piIntercept = x_y_intercept(cdi, pi, confinementHeight, widthT/2, True, centerPointHeight)
-        slopeInn    = confinement_slope(piIntercept, pi, cdi, centerPointHeight, confinementHeight, widthT, False)
-        ERInn       = confinement_ratio(piIntercept, widthT)
+        piIntercept = x_y_intercept(cdi, pi, confinementHeight, widthW/2, True, centerPointHeight)
+        slopeInn    = confinement_slope(piIntercept, pi, cdi, centerPointHeight, confinementHeight, widthW, False)
+        ERInn       = confinement_ratio(piIntercept, widthW)
         
 
     return poIntercept, piIntercept, centerPointHeight, confinementHeight, slopeOut, slopeInn, EROut, ERInn
