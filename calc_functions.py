@@ -275,7 +275,6 @@ def confinement_ratio(intercept, width):
         ratio = np.nan
     else:
         ratio = intercept / (width)
-        print(ratio)
         if intercept < (width/2):
             ratio = 0.5
     return ratio
@@ -307,6 +306,56 @@ def get_low_center_point(po, pi, cdo, cdi, width):
 def mm_to_inch(mm):
     return mm / 25.4
 
+def log_var(df, cols):
+    """ Apply log10 to columns, with an error adjustment. 
+    Error adjustment calculated as min values divided by 10.\n
+    input:
+    - df: input dataset
+    - cols: columns to be logged\n
+    output:
+    - dataset
+    """
+    for c in cols:
+        eps = df[df[c] >0][c].min()/10
+        df[f'{c}Log'] = np.log10(df[c] + eps)
+    return df
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+
+def scale(df, scaleCols):
+    """
+    Apply standard scaler to columns in scaleCols list.
+    All NA values dropped from selected columns
+    return scaled columns in array format.
+    """
+    df = df[scaleCols].copy()
+    df = df.dropna()
+    X  = df[scaleCols]
+    # === Standardize features ===
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    return X_scaled
+
+def stratified_sample(X, labels, min_labels, n, rs = 42):
+    """
+    Take stratified sample from input dataset\n
+    Input:
+    - X: input data to be stratified (arrays or pandas data series)
+    - labels: labels corresponding to data
+    - min_labels: minimal number of unique labels
+    - n: number of samples to taken from dataset
+    - rs: random_state assigned for sampling (default 42)
+    """
+    # test if desired number of labels is present and not all labels are missing
+    if len(np.unique(labels)) < min_labels or all(labels == -1):
+        print('sampling not possible due to mismatch unique samples\
+            and minimal number of samples')
+        return None, None
+    
+    X_sample, _, y_sample, _ = train_test_split(X, labels, train_size=n, 
+                                                stratify=labels, random_state=rs)
+    return X_sample, y_sample
+
 def confinement_values(po, pi, cdo, cdi,widthW, widthT, factor):
     """
     Calculate confinement slope and ratio of intercept with river width.\n
@@ -331,7 +380,6 @@ def confinement_values(po, pi, cdo, cdi,widthW, widthT, factor):
         poIntercept = slopeOut = EROut = np.nan
     else:
         poIntercept = x_y_intercept(cdo, po, confinementHeight, widthW/2, True, centerPointHeight)
-        print(widthW, poIntercept, confinementHeight, centerPointHeight)
         slopeOut    = confinement_slope(poIntercept, po, cdo, centerPointHeight, confinementHeight, widthW, False)
         EROut       = confinement_ratio(poIntercept, widthW)
     if (isinstance(pi, int)):

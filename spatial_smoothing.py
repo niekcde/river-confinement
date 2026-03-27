@@ -228,7 +228,7 @@ def run_bend_smoothing(cont, df):
 
 #%%
 cross = 50
-hfList    = [2,3,4]
+hfList    = [2]
 for hf in hfList:
     hf    = f'{hf}' if hf > 10 else f'0{hf}'
 
@@ -238,7 +238,7 @@ for hf in hfList:
     dsSubset = ds[[
         'combined_reach_id', 'reach_id', 'file', 'bendLen', 'up_reach_id', 
         'networkGraph', 'networkGroup', 'river_name',
-        'dn_connected_reach', 'rch_id_dn', 'rch_id_dn_orig', 'rch_id_up', 'rch_id_up_orig',
+        'dn_connected_reach', 'up_connected_reach', 'rch_id_dn', 'rch_id_dn_orig', 'rch_id_up', 'rch_id_up_orig',
         'combined_reach_up', 'combined_reach_dn',
         'ER_inn', 'ER_out', 'slope_inn', 'slope_out',
         'ER_left', 'ER_right', 'slope_left', 'slope_right',

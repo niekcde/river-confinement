@@ -144,7 +144,7 @@ def main(multiInput):
                 smoothing_window = smoothingFactor*int(factorWidth) # Smoothing window based on width
                     
                 # Smooth centerline
-                combinedLine = SG_smoothing(combinedLine, smoothing_window, factorWidth)
+                combinedLine = SG_smoothing(combinedLine, smoothing_window, factorWidth, id = id)
                 if len(combinedLine.coords) < 3:
                     combinedLine = combinedLine.segmentize(1) 
                 
@@ -166,13 +166,14 @@ def main(multiInput):
                     apex, apexP, apexPO,
                     ang,
                     bendLines, infLines,
-                    bendWidths, bendMaxWidths, bendDistOut, bendLen) = inflection_points_curve(combinedLine, 
+                    bendWidths, bendMaxWidths, bendDistOut, bendLen, bendFacc) = inflection_points_curve(combinedLine, 
                                                 dfReach, dfReachNodes) 
                 
                 # Single values
                 bendSin           = np.array2string(bendSin, separator = ', ')
                 ang               = np.array2string(ang, separator = ', ')
                 bendDistOut       = np.array2string(bendDistOut, separator = ', ')
+                bendFacc          = np.array2string(bendFacc, separator = ', ')
                 bendLen           = np.array2string(bendLen, separator = ', ')
                 
                 apex_str          = np.array2string(apex, separator = ', ')
@@ -188,7 +189,7 @@ def main(multiInput):
                 sin,bendSin, apex, apexP, apexPO, ang = np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
                 infLines, bendLines                   = np.nan, np.nan 
                 bendWidths, bendMaxWidths             = np.nan, np.nan 
-                bendDistOut, bendLen                  = np.nan, np.nan
+                bendDistOut, bendFacc, bendLen        = np.nan, np.nan, np.nan
                 
                 apex_str, bendWidths_str, bendMaxWidths_str = np.nan, np.nan, np.nan
                 apexP_wkt, infLines_wkt, bendLines_wkt      = np.nan, np.nan, np.nan
@@ -209,6 +210,7 @@ def main(multiInput):
             df.loc[dfReach.index, 'bendMaxWidths'] = bendMaxWidths_str   # Bend Max Width
             df.loc[dfReach.index, 'bendDistOut']   = bendDistOut         # Bend Distance to outlet
             df.loc[dfReach.index, 'bendLen']       = bendLen             # Bendline Lenth
+            df.loc[dfReach.index, 'bendFacc']      = bendFacc            # Bendline Lenth
 
             ############################
             # Confinement method
@@ -335,12 +337,12 @@ def run_create_new_reaches_main(continents:'list'):
 
 
 # create_new_reaches_main('af')
-create_new    = True
+create_new    = False
 if create_new == True:
     run_create_new_reaches_main(['af', 'eu', 'na', 'sa', 'as', 'oc'])
-print('run new reach def ready')
+# print('run new reach def ready')
 
-# newsegment files
+# # newsegment files
 # dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
 # dfFiles = dfFiles.sort_values('size', ascending = False)
 # dfFiles = dfFiles.sort_values('filePath', ascending = True)
@@ -348,8 +350,7 @@ print('run new reach def ready')
 
 # files = dfFiles['filePath'].values
 
-# print(files)
-# files = [files[4]]
+# files = [files[-1]]
 
 # confFactor = 50
 # tm1 = dt.now()
@@ -363,34 +364,34 @@ print('run new reach def ready')
 
 
 #%%
-# continentInput       = sys.argv[1]  # First argument
-# number_of_processors = int(sys.argv[2])  # Second argument
+continentInput       = sys.argv[1]  # First argument
+number_of_processors = int(sys.argv[2])  # Second argument
 
-# create_new      = False
-# if create_new == True:
-#     run_create_new_reaches_main([continentInput])
-
-
-# dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
-# dfFiles = dfFiles[dfFiles['file'].str.startswith(continentInput)].sort_values('size', ascending = False)
-# files = dfFiles['filePath'].values
-# print(files, continentInput, number_of_processors)
-# print()
-
-# confFactor = 50
-# removeFiles = glob.glob(directory + f'results/all/{continentInput}*_{confFactor}.csv')
-# for rmf in removeFiles:
-#     os.remove(rmf)
-
-# multiInput = [[f, confFactor] for f in files]
-# # multiInput = [[files, confFactor]]
-# # print(multiInput, number_of_processors)
-# if __name__ == '__main__':
-#     print('__main__')
-#     with Pool(number_of_processors) as p:
-#         p.imap(main, multiInput)
-#         p.close()
-#         p.join()
+create_new      = False
+if create_new == True:
+    run_create_new_reaches_main([continentInput])
 
 
-# print('code Finished')
+dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
+dfFiles = dfFiles[dfFiles['file'].str.startswith(continentInput)].sort_values('size', ascending = False)
+files = dfFiles['filePath'].values
+print(files, continentInput, number_of_processors)
+print()
+
+confFactor = 50
+removeFiles = glob.glob(directory + f'results/all/{continentInput}*_{confFactor}.csv')
+for rmf in removeFiles:
+    os.remove(rmf)
+
+multiInput = [[f, confFactor] for f in files]
+# multiInput = [[files, confFactor]]
+# print(multiInput, number_of_processors)
+if __name__ == '__main__':
+    print('__main__')
+    with Pool(number_of_processors) as p:
+        p.imap(main, multiInput)
+        p.close()
+        p.join()
+
+
+print('code Finished')

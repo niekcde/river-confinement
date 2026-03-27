@@ -25,7 +25,7 @@ def apply_smoothing(line, w):
     
     return SG
 import matplotlib.pyplot as plt
-def SG_smoothing(line, w, width):
+def SG_smoothing(line, w, width, seg = 1, simp = 0.1, simplify_line = True,  id = 9999):
     """Function that used a savtisky Golay filter from scipy to smooth a linestring.
     A hausdorf distance larger than 0.5*width creates new iteration with smaller smoothing window
     input:
@@ -34,22 +34,29 @@ def SG_smoothing(line, w, width):
         width: check value for hausdorf distance
     return: Smoothed LineString
     """
-    line = line.segmentize(1)
-    line = line.simplify(0.1, preserve_topology=True)
-
+    line = line.segmentize(seg)
+    if simplify_line == True:
+        line = line.simplify(simp, preserve_topology=True)
+        # line = line.segmentize(seg*10)
+    
     lineSmooth = apply_smoothing(line, w)
-
+    # print(len(line.coords), len(lineSmooth.coords))
+    # bendLine_coords     = get_points_along_linestring(bendLine, 20)
+    # infLine_coords      = get_points_along_linestring(inf_section, 20)
+    # apexDist, idxBendLine, idxInfLine = directed_hausdorff(bendLine_coords,
+                                                                    #    infLine_coords)
     hdist = shapely.hausdorff_distance(line, lineSmooth)
     while hdist > (width*0.5):
-        
+        # print(f'Window: {w}, Distance: {hdist}')
+        # plt.plot(*lineSmooth.xy)
+        # plt.plot(*line.xy)
+        # plt.show()
         w *= 0.95        
         if w < 2:
-            print('Smoothing broken at window size 2')
+            print(f'Smoothing broken at window size 2 ({w/0.95}) ({id})')
             break;
-        lineSmooth = apply_smoothing(line, w)
-
+        lineSmooth = apply_smoothing(line, w) 
         hdist = shapely.hausdorff_distance(line, lineSmooth)
-        
         # print('?', w, width, hdist)
         # plt.plot(*line.xy)
         # plt.plot(*lineSmooth.xy)

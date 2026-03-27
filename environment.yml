@@ -1,0 +1,27 @@
+name: test-orthogonals
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - jupyterlab
+  - ipykernel
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - netcdf4
+  - xarray
+  - tqdm
+  - ruptures
+  - geopandas
+  - shapely
+  - rasterio
+  - rioxarray
+  - pyproj
+  - fiona
+  - gdal
+  - joblib
+  - networkx
+  - psutil
+  - scikit-learn
+  - pip

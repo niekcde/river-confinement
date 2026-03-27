@@ -426,12 +426,13 @@ def get_bend_dist_out(line, bendLine, dfN):
     # bendDistOut    = nodes['dist_out'].max()
     # dt2 = dt.now()
     nodeDistance = dfN['linePos'] - end
-    nodeID = abs(nodeDistance).argmin()
-    bendDistOut = dfN['dist_out'].iloc[nodeID] + (nodeDistance.iloc[nodeID] * -1)
+    nodeID       = abs(nodeDistance).argmin()
+    bendDistOut  = dfN['dist_out'].iloc[nodeID] + (nodeDistance.iloc[nodeID] * -1)
+    bendFacc     = dfN['facc'].iloc[nodeID]
     # dt3 = dt.now()
     # print(dt2-dt1, dt3-dt2)
 
-    return bendDistOut
+    return bendDistOut, bendFacc
 
 
 # def coord_distances(line):

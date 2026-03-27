@@ -18,263 +18,259 @@ from datetime import datetime as dt
 
 import matplotlib.pyplot as plt
 
+# def inflection_points(vector : 'shapely.geometry.LineString',
+    #                   df : 'gpd.GeoPandasDataFrame',DFNode : 'gpd.GeopandasDataFrame',
+    #                   projection : 'str',
+    #                   degree : 'int' = 0, end_points : 'bool' = True):  
+    # """
+    # Input:
+    #     vector: combined reach id
 
-
-
-
-def inflection_points(vector : 'shapely.geometry.LineString',
-                      df : 'gpd.GeoPandasDataFrame',DFNode : 'gpd.GeopandasDataFrame',
-                      projection : 'str',
-                      degree : 'int' = 0, end_points : 'bool' = True):  
-    """
-    Input:
-        vector: combined reach id
-
-        df: vector Dataframe
-        DFNode: node dataframe
-        projection: reach projection 
-        degree: minimal angle difference for inflection, default = 0
-        end_points: include end_points of linestring as inflection points, default = False
+    #     df: vector Dataframe
+    #     DFNode: node dataframe
+    #     projection: reach projection 
+    #     degree: minimal angle difference for inflection, default = 0
+    #     end_points: include end_points of linestring as inflection points, default = False
     
-    return:
-        Sinuosity (sin_YE): single value for the sinuosity based on length / inflection length
-        Inflection points (infP_YE): inflection points (saved in local CRS)
-        Apex values(apex_YE): Apex values per bend
-        Apex point per bend (apexP_YE): the location of apex point per bend (saved in local CRS)
-        Angle of line (ang_): Averaged difference between points per bend
-    """
-    dfNode = DFNode.copy()
+    # return:
+    #     Sinuosity (sin_YE): single value for the sinuosity based on length / inflection length
+    #     Inflection points (infP_YE): inflection points (saved in local CRS)
+    #     Apex values(apex_YE): Apex values per bend
+    #     Apex point per bend (apexP_YE): the location of apex point per bend (saved in local CRS)
+    #     Angle of line (ang_): Averaged difference between points per bend
+    # """
+    # dfNode = DFNode.copy()
     
-    ###########################
-    # select line coordinates
-    ###########################
-    vec_coords = vector.coords
+    # ###########################
+    # # select line coordinates
+    # ###########################
+    # vec_coords = vector.coords
 
 
-    ########################
-    # Calculate azimutal values and cross products for specified points along line
-    ########################
-    # empty lists to be used in loop
-    crosses          = []
-    fwd              = []
+    # ########################
+    # # Calculate azimutal values and cross products for specified points along line
+    # ########################
+    # # empty lists to be used in loop
+    # crosses          = []
+    # fwd              = []
 
 
-    # loop over all the coordinates minus two. The minus two is to be able to find coordinates 
-    # before and after the selected point
-    for c in range(len(vec_coords) -2):
+    # # loop over all the coordinates minus two. The minus two is to be able to find coordinates 
+    # # before and after the selected point
+    # for c in range(len(vec_coords) -2):
 
-        # Select the target coordinate pair and select point before and after
-        target_min  = vec_coords[c]
-        target      = vec_coords[c+1]
-        target_plus = vec_coords[c+2]
+    #     # Select the target coordinate pair and select point before and after
+    #     target_min  = vec_coords[c]
+    #     target      = vec_coords[c+1]
+    #     target_plus = vec_coords[c+2]
         
-        # Calculate direction between 
-        fwd_azimuth_minus = azimuth_coords(target_min[0], target_min[1],target[0], target[1])
-        fwd_azimuth_plus  = azimuth_coords(target[0], target[1],target_plus[0], target_plus[1])
-        fwd.append((fwd_azimuth_minus + fwd_azimuth_plus) / 2)
+    #     # Calculate direction between 
+    #     fwd_azimuth_minus = azimuth_coords(target_min[0], target_min[1],target[0], target[1])
+    #     fwd_azimuth_plus  = azimuth_coords(target[0], target[1],target_plus[0], target_plus[1])
+    #     fwd.append((fwd_azimuth_minus + fwd_azimuth_plus) / 2)
 
-        # Calculate cross product between points
-        v1 = np.array(target) - np.array(target_min)
-        v2 = np.array(target_plus) - np.array(target)
-        crosses.append((v1[0] * v2[1]) - (v1[1] * v2[0]))
+    #     # Calculate cross product between points
+    #     v1 = np.array(target) - np.array(target_min)
+    #     v2 = np.array(target_plus) - np.array(target)
+    #     crosses.append((v1[0] * v2[1]) - (v1[1] * v2[0]))
         
-    ########################
-    # Create dataframe with cross products and coordinate id's
-    ########################
-    new_df = pd.DataFrame({'id':np.arange(0,len(vec_coords)-2), 'cross':crosses, 'fwd':fwd})
+    # ########################
+    # # Create dataframe with cross products and coordinate id's
+    # ########################
+    # new_df = pd.DataFrame({'id':np.arange(0,len(vec_coords)-2), 'cross':crosses, 'fwd':fwd})
 
-    # get the coordinates for the points 
-    new_df[['X', 'Y']]      = vec_coords[1:-1]
-    new_df.loc[:,'change']  = np.sign(new_df['cross']).diff().ne(0) # check rows where cross product changes sign
+    # # get the coordinates for the points 
+    # new_df[['X', 'Y']]      = vec_coords[1:-1]
+    # new_df.loc[:,'change']  = np.sign(new_df['cross']).diff().ne(0) # check rows where cross product changes sign
     
-    ########################
-    # Calculate inflection points from dataframe containing changes in crossproducts
-    ########################
-    def calc_inflections(df,projection, line,dfNode, dfR):
-        new_df = df.copy()
+    # ########################
+    # # Calculate inflection points from dataframe containing changes in crossproducts
+    # ########################
+    # def calc_inflections(df,projection, line,dfNode, dfR):
+    #     new_df = df.copy()
 
-        # inflections are points where cross product changes sign
-        inflections = new_df[new_df['change'] == True]
-        inflections = inflections.copy() # get copy of dataframe to remove chaining errors
+    #     # inflections are points where cross product changes sign
+    #     inflections = new_df[new_df['change'] == True]
+    #     inflections = inflections.copy() # get copy of dataframe to remove chaining errors
 
-        # check the difference in angle with the previous inflection point
-        inflections.loc[:,'fwd_change'] = abs(inflections['fwd'].diff().values)
+    #     # check the difference in angle with the previous inflection point
+    #     inflections.loc[:,'fwd_change'] = abs(inflections['fwd'].diff().values)
 
-        # set the first value to a high value --> no calculation possible
-        inflections.loc[inflections.index[0], 'fwd_change'] = 100
-        inflections = inflections[inflections['fwd_change'] > degree]
-        # check distance between inflection points is X times the river width 
-        gdf_inf     = gpd.GeoDataFrame(inflections['id'], 
-                                       geometry=gpd.points_from_xy(inflections['X'],inflections['Y']), 
-                                       crs=projection)
+    #     # set the first value to a high value --> no calculation possible
+    #     inflections.loc[inflections.index[0], 'fwd_change'] = 100
+    #     inflections = inflections[inflections['fwd_change'] > degree]
+    #     # check distance between inflection points is X times the river width 
+    #     gdf_inf     = gpd.GeoDataFrame(inflections['id'], 
+    #                                    geometry=gpd.points_from_xy(inflections['X'],inflections['Y']), 
+    #                                    crs=projection)
         
-        infStart = gpd.GeoDataFrame({'id': 0, 'geometry': Point(line.coords[0])}, index = [0])
-        infEnd   = gpd.GeoDataFrame({'id': gdf_inf['id'].max() +1,
-                                     'geometry': Point(line.coords[-1])}, index = [0])
-        gdf_inf = pd.concat([infStart, gdf_inf, infEnd], ignore_index=True)
+    #     infStart = gpd.GeoDataFrame({'id': 0, 'geometry': Point(line.coords[0])}, index = [0])
+    #     infEnd   = gpd.GeoDataFrame({'id': gdf_inf['id'].max() +1,
+    #                                  'geometry': Point(line.coords[-1])}, index = [0])
+    #     gdf_inf = pd.concat([infStart, gdf_inf, infEnd], ignore_index=True)
 
 
-        i1   = gdf_inf.index[0]
-        inds = [i1]
-        bendLines, bendWidths, bendMaxWidths = [], [], []
-        for i, i2 in enumerate(gdf_inf.index[1::]):
+    #     i1   = gdf_inf.index[0]
+    #     inds = [i1]
+    #     bendLines, bendWidths, bendMaxWidths = [], [], []
+    #     for i, i2 in enumerate(gdf_inf.index[1::]):
             
-            P1 = gdf_inf.loc[i1].geometry          
-            P2 = gdf_inf.loc[i2].geometry
-            infLine   = LineString([P1, P2])
+    #         P1 = gdf_inf.loc[i1].geometry          
+    #         P2 = gdf_inf.loc[i2].geometry
+    #         infLine   = LineString([P1, P2])
 
-            bendLine  = create_bend_line(infLine, line)
-            bendWidth, bendMaxWidth = get_bend_width(line, bendLine, dfNode, dfR)
-            bendWidthCalc = bendWidth 
+    #         bendLine  = create_bend_line(infLine, line)
+    #         bendWidth, bendMaxWidth = get_bend_width(line, bendLine, dfNode, dfR)
+    #         bendWidthCalc = bendWidth 
 
-            # Compute directed Hausdorff distance from bendLine to inflection line
-            apexDist = shapely.hausdorff_distance(bendLine, infLine, 0.5)
+    #         # Compute directed Hausdorff distance from bendLine to inflection line
+    #         apexDist = shapely.hausdorff_distance(bendLine, infLine, 0.5)
         
 
-            pdist = abs(line.project(P1) - line.project(P2))
-            # if inflection point distance more than 4*bendwidth AND apex distance larger than bendwidth add the inflection point
-            if (pdist > (bendWidthCalc*4)) & (apexDist > bendWidthCalc):
-                inds.append(i2)
-                i1 = i2
+    #         pdist = abs(line.project(P1) - line.project(P2))
+    #         # if inflection point distance more than 4*bendwidth AND apex distance larger than bendwidth add the inflection point
+    #         if (pdist > (bendWidthCalc*4)) & (apexDist > bendWidthCalc):
+    #             inds.append(i2)
+    #             i1 = i2
                 
-                bendLines.append(bendLine)
-                bendWidths.append(bendWidth)
-                bendMaxWidths.append(bendMaxWidth)
+    #             bendLines.append(bendLine)
+    #             bendWidths.append(bendWidth)
+    #             bendMaxWidths.append(bendMaxWidth)
                 
-            if (i2 == gdf_inf.index[-1]) & (i1 != i2) & (len(inds) > 1):
-                if (pdist > (bendWidthCalc*4)) | (apexDist > (bendWidthCalc)):
-                    inds.append(i2)
-                    bendLines.append(bendLine)
-                    bendWidths.append(bendWidth)
-                    bendMaxWidths.append(bendMaxWidth)
+    #         if (i2 == gdf_inf.index[-1]) & (i1 != i2) & (len(inds) > 1):
+    #             if (pdist > (bendWidthCalc*4)) | (apexDist > (bendWidthCalc)):
+    #                 inds.append(i2)
+    #                 bendLines.append(bendLine)
+    #                 bendWidths.append(bendWidth)
+    #                 bendMaxWidths.append(bendMaxWidth)
                     
-                else:
-                    inds[-1] = i2
+    #             else:
+    #                 inds[-1] = i2
                     
-                    P1 = gdf_inf.loc[inds[-2]].geometry
-                    P2 = gdf_inf.loc[i2].geometry
+    #                 P1 = gdf_inf.loc[inds[-2]].geometry
+    #                 P2 = gdf_inf.loc[i2].geometry
 
-                    infLine   = LineString([P1, P2])
-                    bendLine  = create_bend_line(infLine, line)
-                    bendWidth, bendMaxWidth = get_bend_width(line, bendLine, dfNode, dfR)
+    #                 infLine   = LineString([P1, P2])
+    #                 bendLine  = create_bend_line(infLine, line)
+    #                 bendWidth, bendMaxWidth = get_bend_width(line, bendLine, dfNode, dfR)
 
-                    bendLines[-1] = bendLine
-                    bendWidths[-1] = bendWidth
-                    bendMaxWidths[-1] = bendMaxWidth
+    #                 bendLines[-1] = bendLine
+    #                 bendWidths[-1] = bendWidth
+    #                 bendMaxWidths[-1] = bendMaxWidth
             
-            elif (i2 == gdf_inf.index[-1]) & (len(inds) == 1):
-                inds.append(i2)
-                bendLines.append(bendLine)
-                bendWidths.append(bendWidth)
-                bendMaxWidths.append(bendMaxWidth)
+    #         elif (i2 == gdf_inf.index[-1]) & (len(inds) == 1):
+    #             inds.append(i2)
+    #             bendLines.append(bendLine)
+    #             bendWidths.append(bendWidth)
+    #             bendMaxWidths.append(bendMaxWidth)
             
-        gdf_inf_filtered = gdf_inf.copy()
-        gdf_inf_filtered = gdf_inf_filtered.loc[inds]
-        return gdf_inf_filtered,gdf_inf, bendLines, bendWidths, bendMaxWidths
+    #     gdf_inf_filtered = gdf_inf.copy()
+    #     gdf_inf_filtered = gdf_inf_filtered.loc[inds]
+    #     return gdf_inf_filtered,gdf_inf, bendLines, bendWidths, bendMaxWidths
 
-    ########################
-    # Function for sinuosity, ang & Apex
-    ########################
-    def sin_ang_apex(GDF_INF, vector, bendLines):
-        gdf_inf = GDF_INF.copy()
-        if gdf_inf.shape[0] > 1: # only continue if 
+    # ########################
+    # # Function for sinuosity, ang & Apex
+    # ########################
+    # def sin_ang_apex(GDF_INF, vector, bendLines):
+    #     gdf_inf = GDF_INF.copy()
+    #     if gdf_inf.shape[0] > 1: # only continue if 
         
-            ########################
-            # Calculate Sinuosity
-            ########################
-            infLine = LineString(gdf_inf.geometry)
-            sinuosity = vector.length / infLine.length
+    #         ########################
+    #         # Calculate Sinuosity
+    #         ########################
+    #         infLine = LineString(gdf_inf.geometry)
+    #         sinuosity = vector.length / infLine.length
 
 
-            ########################
-            # Angle & Apex 
-            ########################
+    #         ########################
+    #         # Angle & Apex 
+    #         ########################
             
-            apex            = []  # Apex distance per bend
-            apex_points,apexOrigin_points = [],[]  # apex point per bend
-            ang             = [] # List of average angle per bend
-            bendLength, bendDistOut     = [], []
+    #         apex            = []  # Apex distance per bend
+    #         apex_points,apexOrigin_points = [],[]  # apex point per bend
+    #         ang             = [] # List of average angle per bend
+    #         bendLength, bendDistOut     = [], []
             
-            for i in range(1, gdf_inf.shape[0]): # Loop over all inflection points
+    #         for i in range(1, gdf_inf.shape[0]): # Loop over all inflection points
                 
-                inf_section = LineString([gdf_inf.iloc[i-1].geometry, gdf_inf.iloc[i].geometry]) 
+    #             inf_section = LineString([gdf_inf.iloc[i-1].geometry, gdf_inf.iloc[i].geometry]) 
                 
-                bendLine = bendLines[i-1]
-                ##########
-                # Determine apex points
-                ##########
-                bendLine_coords     = get_points_along_linestring(bendLine, 20)
-                infLine_coords      = get_points_along_linestring(inf_section, 20)
-                apexDist, idxBendLine, idxInfLine = directed_hausdorff(bendLine_coords,
-                                                                       infLine_coords)
+    #             bendLine = bendLines[i-1]
+    #             ##########
+    #             # Determine apex points
+    #             ##########
+    #             bendLine_coords     = get_points_along_linestring(bendLine, 20)
+    #             infLine_coords      = get_points_along_linestring(inf_section, 20)
+    #             apexDist, idxBendLine, idxInfLine = directed_hausdorff(bendLine_coords,
+    #                                                                    infLine_coords)
                 
 
-                apexPoint       = Point(bendLine_coords[idxBendLine])
-                apexOriginPoint = Point(infLine_coords[idxInfLine])
-                if apexOriginPoint.distance(bendLine) < 10:
-                    apexDist = 0
+    #             apexPoint       = Point(bendLine_coords[idxBendLine])
+    #             apexOriginPoint = Point(infLine_coords[idxInfLine])
+    #             if apexOriginPoint.distance(bendLine) < 10:
+    #                 apexDist = 0
 
-                apex.append(apexDist)
-                apex_points.append(apexPoint)
-                apexOrigin_points.append(apexOriginPoint)
+    #             apex.append(apexDist)
+    #             apex_points.append(apexPoint)
+    #             apexOrigin_points.append(apexOriginPoint)
 
-                ##########
-                # Calculate average angle between points
-                ##########
-                ang.append(curvature(bendLine))
-                bendLength.append(bendLine.length)
-                bendDistOut.append(get_bend_dist_out(vector, bendLine, dfNode))
+    #             ##########
+    #             # Calculate average angle between points
+    #             ##########
+    #             ang.append(curvature(bendLine))
+    #             bendLength.append(bendLine.length)
+    #             bendDistOut.append(get_bend_dist_out(vector, bendLine, dfNode))
                 
-            # change all inflection point dataframe in to list
-            infP = list(gdf_inf.geometry.values) 
-        else:
-            # If no inflection points located --> straight line
-            sinuosity         = np.nan 
-            infP              = np.nan
-            apex              = np.nan 
-            apex_points       = np.nan 
-            ang               = np.nan
-            apexOrigin_points = np.nan
+    #         # change all inflection point dataframe in to list
+    #         infP = list(gdf_inf.geometry.values) 
+    #     else:
+    #         # If no inflection points located --> straight line
+    #         sinuosity         = np.nan 
+    #         infP              = np.nan
+    #         apex              = np.nan 
+    #         apex_points       = np.nan 
+    #         ang               = np.nan
+    #         apexOrigin_points = np.nan
 
-        return sinuosity, infP, apex, apex_points, apexOrigin_points, ang, bendLength, bendDistOut
+    #     return sinuosity, infP, apex, apex_points, apexOrigin_points, ang, bendLength, bendDistOut
     
-    ########################
-    # Run functions
-    ########################
-    dfYeEnd = new_df
+    # ########################
+    # # Run functions
+    # ########################
+    # dfYeEnd = new_df
 
-    (inflectionsYE, dfInfTotal, bendLines, 
-     bendWidths, bendMaxWidths)    = calc_inflections(dfYeEnd, projection,vector,dfNode, 
-                                        df)
+    # (inflectionsYE, dfInfTotal, bendLines, 
+    #  bendWidths, bendMaxWidths)    = calc_inflections(dfYeEnd, projection,vector,dfNode, 
+    #                                     df)
 
-    (sin_YE, 
-     infP_YE, apex_YE, apexP_YE, apexPO_YE,
-     ang_YE, bendL_YE, bendDO) = sin_ang_apex(inflectionsYE, vector, bendLines)
+    # (sin_YE, 
+    #  infP_YE, apex_YE, apexP_YE, apexPO_YE,
+    #  ang_YE, bendL_YE, bendDO) = sin_ang_apex(inflectionsYE, vector, bendLines)
 
-    ########################
-    # Determine weightAveraged angle value
-    ########################
-    # wAng_YE = np.average(ang_YE, weights = bendL_YE)
-    # wAng_YE = ang_YE
+    # ########################
+    # # Determine weightAveraged angle value
+    # ########################
+    # # wAng_YE = np.average(ang_YE, weights = bendL_YE)
+    # # wAng_YE = ang_YE
 
 
-    ########################
-    # Change inflection and apex points to global crs
-    ########################
-    # infP_YE  = change_crs_of_list(infP_YE , row.localCRS, projection)
-    # apexP_YE = change_crs_of_list(apexP_YE, row.localCRS, projection)
-    sin           = sin_YE
-    infP          = infP_YE
-    infPTotal     = dfInfTotal['geometry'].values
-    apex          = np.array(apex_YE)
-    apexP         = apexP_YE
-    apexPO        = apexPO_YE
-    ang           = np.array(ang_YE)
-    bendWidths    = np.array(bendWidths)
-    bendMaxWidths = np.array(bendMaxWidths)
-    bendDO        = np.array(bendDO)
+    # ########################
+    # # Change inflection and apex points to global crs
+    # ########################
+    # # infP_YE  = change_crs_of_list(infP_YE , row.localCRS, projection)
+    # # apexP_YE = change_crs_of_list(apexP_YE, row.localCRS, projection)
+    # sin           = sin_YE
+    # infP          = infP_YE
+    # infPTotal     = dfInfTotal['geometry'].values
+    # apex          = np.array(apex_YE)
+    # apexP         = apexP_YE
+    # apexPO        = apexPO_YE
+    # ang           = np.array(ang_YE)
+    # bendWidths    = np.array(bendWidths)
+    # bendMaxWidths = np.array(bendMaxWidths)
+    # bendDO        = np.array(bendDO)
     
-    return(sin, infP, infPTotal, apex, apexP, apexPO, ang, bendLines, bendWidths, bendMaxWidths, bendDO)
+    # return(sin, infP, infPTotal, apex, apexP, apexPO, ang, bendLines, bendWidths, bendMaxWidths, bendDO)
 
 
 def get_point_perpindicular_from_point_off_line(line, point_off_line):
@@ -551,10 +547,10 @@ def inflection_points_curve(line:"shapely.LineString",
     lenApex = len(infCoords)-1 # Number of bends
 
     # create empty lists and arrays to be filled with bend values
-    bendLines, infLines   = np.empty(lenApex, dtype = object), np.empty(lenApex, dtype = object)
-    apexPList, apexPOList = np.empty(lenApex, dtype = object), np.empty(lenApex, dtype = object)
-    bendSin   , bendWidths, bendMaxWidths       = np.empty(lenApex), np.empty(lenApex), np.empty(lenApex) 
-    amplitudes, curveList , bendDO, bendLengths = np.empty(lenApex), np.empty(lenApex), np.empty(lenApex), np.empty(lenApex)
+    bendLines, infLines                                = np.empty(lenApex, dtype = object), np.empty(lenApex, dtype = object)
+    apexPList, apexPOList                              = np.empty(lenApex, dtype = object), np.empty(lenApex, dtype = object)
+    bendSin   , curveList, bendWidths, bendMaxWidths   = np.empty(lenApex), np.empty(lenApex), np.empty(lenApex), np.empty(lenApex)
+    amplitudes, bendDO, bendFacc, bendLengths          = np.empty(lenApex), np.empty(lenApex), np.empty(lenApex), np.empty(lenApex)
 
     removeInd = []
     for ip in range(lenApex):
@@ -598,19 +594,19 @@ def inflection_points_curve(line:"shapely.LineString",
         apexPOList[ip] = apexPO
 
         # Line values
-        bendLengths[ip]   = bendLine.length
-        bendSin[ip]       = bendLine.length / infLine.length 
-        bendWidths[ip]    = bendWidth
-        bendMaxWidths[ip] = bendMaxWidth
-        amplitudes[ip]    = amplitude
-        curveList[ip]     = bendCurvature
-        bendDO[ip]        = get_bend_dist_out(line, bendLine, dfNodeR)
+        bendLengths[ip]       = bendLine.length
+        bendSin[ip]           = bendLine.length / infLine.length 
+        bendWidths[ip]        = bendWidth
+        bendMaxWidths[ip]     = bendMaxWidth
+        amplitudes[ip]        = amplitude
+        curveList[ip]         = bendCurvature
+        bendDO[ip], bendFacc[ip] = get_bend_dist_out(line, bendLine, dfNodeR)
 
     # Reach sinuosity
     sin  = line.length / LineString(infCoords).length
 
     remList = [bendLines, infLines, apexPList, apexPOList, bendSin, bendWidths, bendMaxWidths, 
-               amplitudes, curveList , bendDO, bendLengths,infCoords]
+               amplitudes, curveList , bendDO, bendLengths,infCoords, bendFacc]
     for i in range(len(remList)):
         remList[i] = np.delete(remList[i], removeInd, axis = 0)
 
@@ -620,4 +616,4 @@ def inflection_points_curve(line:"shapely.LineString",
 
 
     return (sin, remList[4], remList[11], coords[curveChanges], remList[7], remList[2], remList[3], remList[8], 
-                remList[0], remList[1], remList[5], remList[6], remList[9], remList[10])
+                remList[0], remList[1], remList[5], remList[6], remList[9], remList[10], remList[11])
