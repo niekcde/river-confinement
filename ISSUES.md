@@ -9,15 +9,15 @@ Impact:
 - Running code from this session cannot assume that `/scratch/6256481/` exists
 
 Examples in current active code:
-- `main.py`
-- `reach_definition.py`
-- `open_to_single_apex.py`
-- `run_confinement_values_shell.py`
-- `run_confinement_values.py` default argument
+- `pipeline/main.py`
+- `pipeline/reach_definition.py`
+- `pipeline/open_to_single_apex.py`
+- `pipeline/run_confinement_values_shell.py`
+- `pipeline/run_confinement_values.py` default argument
 
-## 2. Step 1 is embedded inside `main.py`
+## 2. Step 1 is embedded inside `pipeline/main.py`
 
-The segmented-reach prerequisite generation is part of `main.py` via `run_create_new_reaches_main(...)` and `create_new_reaches_main(...)`, gated by `create_new = False`, instead of being exposed as a separate stable entrypoint.
+The segmented-reach prerequisite generation is part of `pipeline/main.py` via `run_create_new_reaches_main(...)` and `create_new_reaches_main(...)`, gated by `create_new = False`, instead of being exposed as a separate stable entrypoint.
 
 Impact:
 - The pipeline start is harder to discover and run
@@ -28,7 +28,7 @@ Follow-up direction:
 
 ## 3. Step 3 has duplicated entrypoints
 
-The Step 3 single-bend expansion is implemented once in `create_apex_val_dataframe(...)`, but it is invoked by both `open_to_single_apex.py` and the `createNewSingleVal == True` block in `run_confinement_values_shell.py`.
+The Step 3 single-bend expansion is implemented once in `create_apex_val_dataframe(...)`, but it is invoked by both `pipeline/open_to_single_apex.py` and the `createNewSingleVal == True` block in `pipeline/run_confinement_values_shell.py`.
 
 Impact:
 - There are two current ways to run the same pipeline stage
@@ -39,7 +39,7 @@ Follow-up direction:
 
 ## 4. Downstream output directories are not created in active setup code
 
-Active downstream code writes to `results/single_values/` and `results/reach_averaged/`, but the visible setup code in `main.py` only creates:
+Active downstream code writes to `results/single_values/` and `results/reach_averaged/`, but the visible setup code in `pipeline/main.py` only creates:
 - `results/`
 - `results/new_segments/`
 - `results/new_segments/node/`
@@ -54,9 +54,9 @@ Impact:
 Follow-up direction:
 - Add explicit directory creation for downstream outputs in the active pipeline setup path
 
-## 5. Step 4 is only embedded in `run_confinement_values_shell.py`
+## 5. Step 4 is only embedded in `pipeline/run_confinement_values_shell.py`
 
-The confinement-factor lookup table is produced by the `createNewFactor == True` block in `run_confinement_values_shell.py`. I do not see a separate dedicated entrypoint for this stage.
+The confinement-factor lookup table is produced by the `createNewFactor == True` block in `pipeline/run_confinement_values_shell.py`. I do not see a separate dedicated entrypoint for this stage.
 
 Impact:
 - Step 4 is harder to run independently and document cleanly
@@ -67,7 +67,7 @@ Follow-up direction:
 
 ## 6. Step 4 is not robust to an empty Step 3 result set
 
-In `run_confinement_values_shell.py`, `dfA` is only assigned inside the loop over `allResultFiles`. If no `results/single_values/??_??_50.csv` files exist, the later call to `confinement_factor_single_values(dfA, ...)` will fail because `dfA` was never defined.
+In `pipeline/run_confinement_values_shell.py`, `dfA` is only assigned inside the loop over `allResultFiles`. If no `results/single_values/??_??_50.csv` files exist, the later call to `confinement_factor_single_values(dfA, ...)` will fail because `dfA` was never defined.
 
 Impact:
 - Step 4 can crash instead of failing with a clear prerequisite error when Step 3 outputs are missing
@@ -77,7 +77,7 @@ Follow-up direction:
 
 ## 7. Reach-averaged geometry reconstruction in Step 5 appears broken
 
-In `run_confinement_values.py`, `ER_slope_margin_values(...)` calls:
+In `pipeline/run_confinement_values.py`, `ER_slope_margin_values(...)` calls:
 - `merge_centerlines(dfSingle, _, _, False)`
 
 Those `_` placeholders are not valid arguments in normal script execution. The call is wrapped in a broad `except`, which then falls back to `shapely.geometry.LineString()`.
@@ -91,7 +91,7 @@ Follow-up direction:
 
 ## 8. The DEM VRT is a required but undeclared prerequisite
 
-Both `main.py` and `run_confinement_values.py` open `input_created/FAB_dem_vrt.vrt`, but I do not see active code in the current audited pipeline that writes that file. I found DEM helper code in `dem.py` and `select_raster.py`, but not a visible creator for this specific VRT.
+Both `pipeline/main.py` and `pipeline/run_confinement_values.py` open `input_created/FAB_dem_vrt.vrt`, but I do not see active code in the current audited pipeline that writes that file. I found DEM helper code in `pipeline/dem.py` and `pipeline/select_raster.py`, but not a visible creator for this specific VRT.
 
 Impact:
 - Step 2 and Step 5 depend on filesystem state that is not yet represented as a documented active pipeline step
@@ -102,7 +102,7 @@ Follow-up direction:
 
 ## 9. Step 6 reach-averaged aggregation uses the wrong height-factor string
 
-In `run_confinement_values.py`, `concat_reachAveraged(directory, cross, hf)` contains:
+In `pipeline/run_confinement_values.py`, `concat_reachAveraged(directory, cross, hf)` contains:
 - `if hf < 10: hf = f'02'`
 
 That hard-codes every height factor below 10 to `02` instead of formatting the actual value.
@@ -126,20 +126,21 @@ Follow-up direction:
 
 ## 11. Step 7 only processes height factor `02`
 
-In `spatial_smoothing.py`, the active code hard-codes:
+In `pipeline/spatial_smoothing.py`, the active code hard-codes:
 - `hfList = [2]`
 
 Step 5 and Step 6 produce outputs for many height factors, but Step 7 only smooths one of them.
 
 Impact:
-- The downstream smoothed dataset pipeline is incomplete relative to the earlier confinement-output stages
+- The main smoothed-results pipeline is incomplete relative to the earlier confinement-output stages
+- Final clustering and final-results workflows are effectively pinned to one smoothed height factor
 
 Follow-up direction:
 - Either document `02` as the only supported smoothing height or loop over the actual intended set of height factors
 
 ## 12. Step 7 writes to `results/single_smoothed/` without visible directory creation
 
-`spatial_smoothing.py` writes smoothed NetCDF and pickle files to `results/single_smoothed/`, but I do not see active setup code that creates that directory.
+`pipeline/spatial_smoothing.py` writes smoothed NetCDF and pickle files to `results/single_smoothed/`, but I do not see active setup code that creates that directory.
 
 Impact:
 - Step 7 may fail on a clean filesystem
@@ -149,20 +150,21 @@ Follow-up direction:
 
 ## 13. Step 8 expects smoothed files for heights `02`, `03`, and `04`, but Step 7 only creates `02`
 
-`clustering_confinement.py` loops over `ch in [2,3,4]` and opens:
+`pipeline/clustering_confinement.py` loops over `ch in [2,3,4]` and opens:
 - `results/single_smoothed/global_50_0{ch}_smoothed.nc`
 
 But the active Step 7 code only produces `global_50_02_smoothed.nc`.
 
 Impact:
 - Step 8 cannot run successfully for `03` and `04` from the currently visible upstream code path
+- The clustering stage and the smoothing stage are not aligned inside the current main analysis workflow
 
 Follow-up direction:
 - Align the smoothing stage and clustering stage to the same set of height factors
 
 ## 14. Step 8 has an obvious runtime bug in the KMeans section
 
-In `clustering_confinement.py`, after:
+In `pipeline/clustering_confinement.py`, after:
 - `S = KmeansTune(dfCluster, clusterCols, clusters, sampleSize, random_states)`
 
 the code does:

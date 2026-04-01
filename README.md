@@ -5,12 +5,12 @@ Code for analysing SWORD data and creating a different river morpohlogy metrics
 
 ### Step 1: build segmented reach inputs and prerequisite tables
 
-Source of truth for this step is the root-level code in `main.py`, `reach_definition.py`, and `support.py`.
+Source of truth for this step is the active pipeline code in `pipeline/main.py`, `pipeline/reach_definition.py`, and `pipeline/support.py`.
 
-The first pipeline step is the prerequisite-generation path inside `main.py`. The default CLI path later in `main.py` depends on outputs from this step, so `run_confinement_values_shell.py` is not the start of the pipeline.
+The first pipeline step is the prerequisite-generation path inside `pipeline/main.py`. The default CLI path later in `pipeline/main.py` depends on outputs from this step, so `pipeline/run_confinement_values_shell.py` is not the start of the pipeline.
 
 Current Step 1 code path:
-- `main.py` -> `run_create_new_reaches_main(...)` -> `create_new_reaches_main(...)`
+- `pipeline/main.py` -> `run_create_new_reaches_main(...)` -> `create_new_reaches_main(...)`
 - `create_new_reaches_main(...)` reads `input/SWOT_vector/{continent}*17*gpkg` and `input/SWOT_nodes/{continent}*17*gpkg`
 - For each vector/node pair it calls `new_reach_definition(..., save=True)`
 
@@ -23,17 +23,17 @@ Step 1 outputs written by code:
 - `results/new_segments/vector_cont/{continent}_reaches.gpkg`
 
 Notes from the code audit:
-- This first step is currently gated in `main.py` behind `create_new = False`
+- This first step is currently gated in `pipeline/main.py` behind `create_new = False`
 - There is no `.sh`, `.bash`, or `.zsh` pipeline entrypoint in this repository
 - Multiple active scripts hard-code `directory = '/scratch/6256481/'`; that external path was not verified in this session
-- `main.py` creates `results/new_segments/vector/` and `results/new_segments/node/`, but I do not see code here creating `results/new_segments/vector_cont/` before `create_continent_new_reach(...)` writes to it
+- `pipeline/main.py` creates `results/new_segments/vector/` and `results/new_segments/node/`, but I do not see code here creating `results/new_segments/vector_cont/` before `create_continent_new_reach(...)` writes to it
 
 ### Step 2: run the first confinement-metric pass on segmented reaches
 
-Source of truth for this step is the default CLI path in `main.py`.
+Source of truth for this step is the default CLI path in `pipeline/main.py`.
 
 Current Step 2 code path:
-- `main.py` reads `continentInput = sys.argv[1]` and `number_of_processors = int(sys.argv[2])`
+- `pipeline/main.py` reads `continentInput = sys.argv[1]` and `number_of_processors = int(sys.argv[2])`
 - It loads `results/file_sorting.csv`, filters rows for the requested continent, and builds `multiInput = [[filePath, 50], ...]`
 - Under `if __name__ == '__main__':` it runs `Pool(number_of_processors).imap(main, multiInput)`
 - `main(...)` opens the segmented reach/node files from Step 1, reads `results/smoothingFactor.csv`, opens `input_created/FAB_dem_vrt.vrt`, and computes bend/confinement metrics
@@ -43,15 +43,15 @@ Step 2 outputs written by code:
 
 Notes from the code audit:
 - Step 2 depends on Step 1 outputs already existing, especially `results/new_segments/...` and `results/file_sorting.csv`
-- The active code fixes `confFactor = 50` in `main.py`
-- These `results/all/*.csv` files are consumed downstream by `open_to_single_apex.py` and `run_confinement_values_shell.py`
+- The active code fixes `confFactor = 50` in `pipeline/main.py`
+- These `results/all/*.csv` files are consumed downstream by `pipeline/open_to_single_apex.py` and `pipeline/run_confinement_values_shell.py`
 
 ### Step 3: expand Step 2 reach files into single-bend value tables
 
-Source of truth for this step is `create_apex_val_dataframe(...)` in `run_confinement_values.py`.
+Source of truth for this step is `create_apex_val_dataframe(...)` in `pipeline/run_confinement_values.py`.
 
 Current Step 3 code path:
-- `open_to_single_apex.py` imports `create_apex_val_dataframe`
+- `pipeline/open_to_single_apex.py` imports `create_apex_val_dataframe`
 - It reads `results/all/??_??_50.csv`
 - It removes existing `results/single_values/??_??_50.csv`
 - Under `if __name__ == '__main__':` it runs `Pool(10).imap(create_apex_val_dataframe, files)`
@@ -66,16 +66,16 @@ Step 3 outputs written by code:
 - `results/single_values/{continent}_{file_id}_50.csv`
 
 Notes from the code audit:
-- This same Step 3 transformation is also duplicated inside the `createNewSingleVal == True` block in `run_confinement_values_shell.py`
+- This same Step 3 transformation is also duplicated inside the `createNewSingleVal == True` block in `pipeline/run_confinement_values_shell.py`
 - Step 3 depends on Step 2 outputs already existing in `results/all/`
 - I do not see active code creating `results/single_values/` before Step 3 writes into it
 
 ### Step 4: build the global confinement-factor lookup table
 
-Source of truth for this step is the `createNewFactor == True` block in `run_confinement_values_shell.py` together with `confinement_factor_single_values(...)` in `support.py`.
+Source of truth for this step is the `createNewFactor == True` block in `pipeline/run_confinement_values_shell.py` together with `confinement_factor_single_values(...)` in `pipeline/support.py`.
 
 Current Step 4 code path:
-- `run_confinement_values_shell.py` reads all `results/single_values/??_??_50.csv`
+- `pipeline/run_confinement_values_shell.py` reads all `results/single_values/??_??_50.csv`
 - It concatenates those files into one dataframe
 - It calls `confinement_factor_single_values(dfA, 'bendWidths', 50, 10)`
 - It writes the result to `results/confinement_factor.csv`
@@ -90,15 +90,15 @@ Step 4 outputs written by code:
 
 Notes from the code audit:
 - Step 4 depends on Step 3 outputs already existing in `results/single_values/`
-- I do not see a standalone Step 4 entrypoint outside `run_confinement_values_shell.py`
-- This lookup table is consumed in `run_confinement_values.py` when later confinement values are computed
+- I do not see a standalone Step 4 entrypoint outside `pipeline/run_confinement_values_shell.py`
+- This lookup table is consumed in `pipeline/run_confinement_values.py` when later confinement values are computed
 
 ### Step 5: compute confinement outputs for each height factor
 
-Source of truth for this step is the `for hf in heightFactor` loop in `run_confinement_values_shell.py` together with `calc_confinement_values(...)` and `ER_slope_margin_values(...)` in `run_confinement_values.py`.
+Source of truth for this step is the `for hf in heightFactor` loop in `pipeline/run_confinement_values_shell.py` together with `calc_confinement_values(...)` and `ER_slope_margin_values(...)` in `pipeline/run_confinement_values.py`.
 
 Current Step 5 code path:
-- `run_confinement_values_shell.py` loops over `heightFactor = [2, 0.5, 1, 1.5, 3, 4, 6, 8, 10, 15]`
+- `pipeline/run_confinement_values_shell.py` loops over `heightFactor = [2, 0.5, 1, 1.5, 3, 4, 6, 8, 10, 15]`
 - For each `hf`, it builds `multiInput = [[singleValueFile, hf], ...]`
 - Under `if __name__ == '__main__':` it parallelizes `run(...)`
 - `run(...)` reads one `results/single_values/{continent}_{file_id}_50.csv` file and calls `calc_confinement_values(...)`
@@ -122,10 +122,10 @@ Notes from the code audit:
 
 ### Step 6: aggregate Step 5 outputs by height factor
 
-Source of truth for this step is `concat_nc_conf_files(...)` and `concat_reachAveraged(...)` in `run_confinement_values.py`, called from the `for hf in heightFactor` loop in `run_confinement_values_shell.py`.
+Source of truth for this step is `concat_nc_conf_files(...)` and `concat_reachAveraged(...)` in `pipeline/run_confinement_values.py`, called from the `for hf in heightFactor` loop in `pipeline/run_confinement_values_shell.py`.
 
 Current Step 6 code path:
-- After each Step 5 batch for one `hf`, `run_confinement_values_shell.py` calls `concat_nc_conf_files(directory, crossFactor, hf)`
+- After each Step 5 batch for one `hf`, `pipeline/run_confinement_values_shell.py` calls `concat_nc_conf_files(directory, crossFactor, hf)`
 - It then calls `concat_reachAveraged(directory, crossFactor, hf)`
 
 Transformation performed by code:
@@ -138,14 +138,14 @@ Step 6 outputs written by code:
 
 Notes from the code audit:
 - Step 6 depends on Step 5 outputs already existing for the requested `hf`
-- This is the last clearly visible stage of the core confinement-output pipeline
+- This is the last clearly visible stage of the unsmoothed confinement-output pipeline
 
 ### Step 7: spatially smooth the aggregated global confinement dataset
 
-Source of truth for this step is `spatial_smoothing.py` together with `concat_nc_smooth_files(...)` in `support.py`.
+Source of truth for this step is `pipeline/spatial_smoothing.py` together with `concat_nc_smooth_files(...)` in `pipeline/support.py`.
 
 Current Step 7 code path:
-- `spatial_smoothing.py` hard-codes `cross = 50` and `hfList = [2]`
+- `pipeline/spatial_smoothing.py` hard-codes `cross = 50` and `hfList = [2]`
 - It reads `results/single_values/global_50_02_conf.nc`
 - It derives additional normalized ER/slope variables from the global dataset
 - It runs `run_bend_smoothing(...)` per continent
@@ -162,15 +162,15 @@ Step 7 outputs written by code:
 - `results/single_smoothed/global_50_02_smoothed.nc`
 
 Notes from the code audit:
-- This is downstream post-processing of Step 6 output, not part of the core confinement extraction itself
+- This is part of the main pipeline because the smoothed outputs feed the clustering workflow and the final-results workflow
 - In current code, only height factor `02` is processed here
 
 ### Step 8: run confinement clustering analysis on the smoothed dataset
 
-Source of truth for this step is `clustering_confinement.py`.
+Source of truth for this step is `pipeline/clustering_confinement.py`.
 
 Current Step 8 code path:
-- `clustering_confinement.py` opens `results/single_smoothed/global_50_0{ch}_smoothed.nc`
+- `pipeline/clustering_confinement.py` opens `results/single_smoothed/global_50_0{ch}_smoothed.nc`
 - It loops over `ch in [2,3,4]`
 - It scales selected smoothed slope variables, runs PCA, and then runs clustering-tuning code
 
@@ -178,6 +178,7 @@ Visible outputs written by code:
 - `results/GMMSCORES_confinement_0{ch}.csv`
 
 Notes from the code audit:
-- This is downstream analysis, not a core confinement-generation step
+- This is part of the final analysis pipeline built on top of the smoothed confinement outputs
 - I do not see active KMeans output writes because the KMeans save line is commented out
 - The script currently appears internally inconsistent with the upstream smoothing script, which only builds smoothed data for `hf = 02`
+- `pipeline/final_results.ipynb` imports clustering helpers and reads the smoothed `global_50_02_smoothed.nc` output, so the smoothing stage is not optional for the current final workflow
