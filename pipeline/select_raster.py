@@ -17,10 +17,12 @@ from glob import glob
 from multiprocessing import Pool
 
 #import custom Modules
+from .paths import load_project_paths
 from .support import check_memory, adjust_new_segments
 from .dem import find_dem_FAB,find_dem_bounds_FAB
 
 directory = '/scratch/6256481/'
+PROJECT_PATHS = load_project_paths()
 
 def divide_dataframe_in_equal_parts(df, max_size = 1000):
     new_rows = []
@@ -100,7 +102,11 @@ def run_save_raster_reach(df, cont,contOrder, bufferSize, dfDemBounds):
     return dfDEM
 
 def multi_save_raster_reach(multiInput):
-    dfDemBounds = find_dem_bounds_FAB(directory, 'EPSG:4326')
+    dfDemBounds = find_dem_bounds_FAB(
+        demCRS='EPSG:4326',
+        fabdem_dir=PROJECT_PATHS.fabdem_dir,
+        dem_boundary_file=PROJECT_PATHS.fabdem_bounds,
+    )
     
     filePath, start, end, order = multiInput
     df = gpd.read_file(filePath)

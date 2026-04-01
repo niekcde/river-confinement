@@ -40,16 +40,19 @@ from osgeo import gdal
 from scipy.stats import trim_mean
 
 # %% Import custom modules
+from .paths import load_project_paths
 from .inflection_points import inflection_points_curve
 from .get_orthogonals import get_orthogonals
 from .support import create_dir, node_position, adjust_new_segments
 from .connect_geometries import merge_centerlines
 from .smoothing import SG_smoothing
 
+PROJECT_PATHS = load_project_paths()
+
 # %%create needed directories
 
-create_dir(directory + 'input_created')
-create_dir(directory + 'input_created/dem')
+create_dir(str(PROJECT_PATHS.input_created_root))
+create_dir(str(PROJECT_PATHS.input_created_dem_dir))
 create_dir(directory + 'results')
 create_dir(directory + 'results/reference_tables')
 create_dir(directory + 'results/new_segments')
@@ -95,8 +98,12 @@ def main(multiInput):
         ids = df.loc[df['include_flag'] == '0','combined_reach_id'].unique()
         dfSF = pd.read_csv(directory + 'results/reference_tables/smoothingFactor.csv')
         
-        vrt_file = directory + "input_created/FAB_dem_vrt.vrt"
+        vrt_file = str(PROJECT_PATHS.fabdem_vrt)
         demVRT   = gdal.Open(vrt_file)
+        if demVRT is None:
+            raise FileNotFoundError(
+                f"FABDEM VRT not found at {vrt_file}. Run 'python -m pipeline.build_fabdem_index' first."
+            )
         
         # array to string replacement
         str_replace = '[()]|list'

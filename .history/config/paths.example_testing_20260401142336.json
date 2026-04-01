@@ -1,0 +1,8 @@
+{
+  "data_root": "./data",
+  "results_root": "./results",
+  "swot_vector_dir": "./data/SWOT_vector",
+  "swot_nodes_dir": "./data/SWOT_nodes",
+  "input_created_root": "./input_created",
+  "fabdem_vrt": "./input_created/FAB_dem_vrt.vrt"
+}

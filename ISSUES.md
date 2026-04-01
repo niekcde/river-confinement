@@ -108,16 +108,17 @@ Impact:
 Follow-up direction:
 - Replace the placeholder arguments with real inputs and remove the blanket silent fallback
 
-## 8. The DEM VRT is a required but undeclared prerequisite
+## 8. FABDEM source indexing is now explicit, but later DEM-dependent code still needs broader path cleanup
 
-Both `pipeline/main.py` and `pipeline/run_confinement_values.py` open `input_created/FAB_dem_vrt.vrt`, but I do not see active code in the current audited pipeline that writes that file. I found DEM helper code in `pipeline/dem.py` and `pipeline/select_raster.py`, but not a visible creator for this specific VRT.
+Status update:
+- Initial fix implemented: `pipeline/build_fabdem_index.py` now creates `input_created/dem/FAB_dem_vrt.vrt` and `input_created/dem/FAB_dem_bounds.gpkg`
+- The source FABDEM tile directory is now intended to be configured once via `fabdem_dir`
 
-Impact:
-- Step 2 and Step 5 depend on filesystem state that is not yet represented as a documented active pipeline step
-- A fresh run from repository code alone is not reproducible from the currently documented steps
+Remaining follow-up:
+- The broader DEM-related workflow still mixes centralized FABDEM paths with older hard-coded base-directory patterns in other active scripts
 
-Follow-up direction:
-- Add an explicit VRT creation step or document the external prerequisite and its entrypoint clearly
+Impact that remains:
+- The VRT is no longer undeclared, but the rest of the pipeline has not yet been fully migrated to one consistent path/config model
 
 ## 9. Step 6 reach-averaged aggregation uses the wrong height-factor string
 

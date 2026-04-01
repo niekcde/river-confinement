@@ -46,6 +46,7 @@ class ProjectPaths:
     results_root: Path
     swot_vector_dir: Path
     swot_nodes_dir: Path
+    fabdem_dir: Path
     input_created_root: Path
     fabdem_vrt: Path
 
@@ -68,6 +69,14 @@ class ProjectPaths:
     @property
     def reference_tables_dir(self) -> Path:
         return self.results_root / "reference_tables"
+
+    @property
+    def input_created_dem_dir(self) -> Path:
+        return self.input_created_root / "dem"
+
+    @property
+    def fabdem_bounds(self) -> Path:
+        return self.input_created_dem_dir / "FAB_dem_bounds.gpkg"
 
     @property
     def all_dir(self) -> Path:
@@ -111,6 +120,14 @@ class ProjectPaths:
             self.centerline_dir,
             self.cycles_dir,
             self.input_created_root,
+            self.input_created_dem_dir,
+        ):
+            path.mkdir(parents=True, exist_ok=True)
+
+    def ensure_fabdem_dirs(self) -> None:
+        for path in (
+            self.input_created_root,
+            self.input_created_dem_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 
@@ -126,6 +143,14 @@ class ProjectPaths:
                 "Step 1 inputs are missing. Configure the paths in "
                 f"{self.repo_root / 'config' / 'paths.local.json'} or create the expected directories:\n"
                 + "\n".join(missing)
+            )
+
+    def validate_fabdem_inputs(self) -> None:
+        if not self.fabdem_dir.exists():
+            raise FileNotFoundError(
+                "FABDEM inputs are missing. Configure 'fabdem_dir' in "
+                f"{self.repo_root / 'config' / 'paths.local.json'} or create the expected directory:\n"
+                f"fabdem_dir: {self.fabdem_dir}"
             )
 
 
@@ -155,7 +180,7 @@ def load_project_paths(config_path: str | os.PathLike[str] | None = None) -> Pro
             raise FileNotFoundError(f"Config file not found: {selected_config}")
         raw = _load_json(selected_config)
 
-    config_base = selected_config.parent if selected_config is not None else root
+    config_base = root
 
     data_root = _resolve_path(raw.get("data_root"), base_dir=config_base)
     if data_root is None:
@@ -183,9 +208,15 @@ def load_project_paths(config_path: str | os.PathLike[str] | None = None) -> Pro
     if swot_nodes_dir is None:
         swot_nodes_dir = root / "input" / "SWOT_nodes"
 
+    fabdem_dir = _resolve_path(raw.get("fabdem_dir"), base_dir=config_base)
+    if fabdem_dir is None and data_root is not None:
+        fabdem_dir = data_root / "FABDEM"
+    if fabdem_dir is None:
+        fabdem_dir = root / "input" / "FAB_dem"
+
     fabdem_vrt = _resolve_path(raw.get("fabdem_vrt"), base_dir=config_base)
     if fabdem_vrt is None:
-        fabdem_vrt = input_created_root / "FAB_dem_vrt.vrt"
+        fabdem_vrt = input_created_root / "dem" / "FAB_dem_vrt.vrt"
 
     return ProjectPaths(
         repo_root=root,
@@ -194,6 +225,7 @@ def load_project_paths(config_path: str | os.PathLike[str] | None = None) -> Pro
         results_root=results_root.resolve(),
         swot_vector_dir=swot_vector_dir.resolve(),
         swot_nodes_dir=swot_nodes_dir.resolve(),
+        fabdem_dir=fabdem_dir.resolve(),
         input_created_root=input_created_root.resolve(),
         fabdem_vrt=fabdem_vrt.resolve(),
     )

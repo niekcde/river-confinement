@@ -9,6 +9,7 @@ import geopandas as gpd
 import pandas as pd
 import xarray as xr
 import os
+from pathlib import Path
 
 # import partial packages
 from rioxarray.merge import merge_arrays
@@ -142,25 +143,87 @@ def find_dem(row_in:gpd.GeoDataFrame, directory:str, projection:str,buffer_size:
 
     return raster
 
-def find_dem_bounds_FAB(directory, demCRS, create_new = False):
-    dem_boundary_file = directory + 'FAB_dem_bounds.gpkg'
 
-    if (os.path.isfile(dem_boundary_file) & (create_new == False)):
-        dfBounds = gpd.read_file(dem_boundary_file)
-    else:
-        demFiles = glob.glob(directory + 'input/FAB_dem/*.tif')
-        name, geom = [], []
-        for f in demFiles:
-            raster =  rioxarray.open_rasterio(f) 
-            if raster.rio.crs != demCRS:
-                bounds = raster.transform_bounds(demCRS)
+def _collect_fabdem_files(fabdem_dir) -> list[str]:
+    fabdem_dir = Path(fabdem_dir).expanduser().resolve()
+    dem_files = sorted(
+        str(path)
+        for path in fabdem_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() in {".tif", ".tiff"}
+    )
+
+    if len(dem_files) == 0:
+        raise FileNotFoundError(f"No FABDEM GeoTIFF files found in {fabdem_dir}")
+
+    return dem_files
+
+
+def build_fabdem_vrt(fabdem_dir, vrt_path, overwrite: bool = False) -> Path:
+    vrt_path = Path(vrt_path).expanduser().resolve()
+    vrt_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if vrt_path.exists():
+        if overwrite is False:
+            return vrt_path
+        os.remove(vrt_path)
+
+    dem_files = _collect_fabdem_files(fabdem_dir)
+    vrt_ds = gdal.BuildVRT(str(vrt_path), dem_files)
+    if vrt_ds is None:
+        raise RuntimeError(f"Failed to build FABDEM VRT at {vrt_path}")
+    vrt_ds.FlushCache()
+    vrt_ds = None
+    return vrt_path
+
+
+def build_fabdem_bounds(fabdem_dir, bounds_path, dem_crs: str = 'EPSG:4326', overwrite: bool = False) -> gpd.GeoDataFrame:
+    bounds_path = Path(bounds_path).expanduser().resolve()
+    bounds_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if bounds_path.exists() and overwrite is False:
+        return gpd.read_file(bounds_path)
+
+    dem_files = _collect_fabdem_files(fabdem_dir)
+    ids = []
+    geometries = []
+    for dem_file in dem_files:
+        raster = rioxarray.open_rasterio(dem_file, cache=False)
+        try:
+            raster_crs = str(raster.rio.crs) if raster.rio.crs is not None else dem_crs
+            if raster_crs != dem_crs:
+                bounds = raster.rio.transform_bounds(dem_crs)
             else:
-                bounds = raster.rio.bounds() 
-            dir, name = demFiles.rsplit('/', maxsplit = 1)
-            geom.append(Box(*bounds))
-        dfBounds = gpd.GeoDataFrame({'id':name, 'geometry':geom, 'directory':dir}, crs = demCRS)
-        dfBounds.to_file(dem_boundary_file, driver = 'GPKG')
-    return dfBounds
+                bounds = raster.rio.bounds()
+        finally:
+            raster.close()
+
+        ids.append(dem_file)
+        geometries.append(Box(*bounds))
+
+    df_bounds = gpd.GeoDataFrame({'id': ids, 'geometry': geometries}, crs=dem_crs)
+    if bounds_path.exists():
+        os.remove(bounds_path)
+    df_bounds.to_file(bounds_path, driver='GPKG')
+    return df_bounds
+
+def find_dem_bounds_FAB(directory=None, demCRS='EPSG:4326', create_new = False,
+                        fabdem_dir=None, dem_boundary_file=None):
+    if fabdem_dir is None:
+        if directory is None:
+            raise ValueError("Either 'directory' or 'fabdem_dir' must be provided.")
+        fabdem_dir = Path(directory).expanduser().resolve() / 'input' / 'FAB_dem'
+
+    if dem_boundary_file is None:
+        if directory is None:
+            raise ValueError("Either 'directory' or 'dem_boundary_file' must be provided.")
+        dem_boundary_file = Path(directory).expanduser().resolve() / 'input_created' / 'dem' / 'FAB_dem_bounds.gpkg'
+
+    return build_fabdem_bounds(
+        fabdem_dir=fabdem_dir,
+        bounds_path=dem_boundary_file,
+        dem_crs=demCRS,
+        overwrite=create_new,
+    )
 
 def find_dem_FAB(rowIn:gpd.GeoDataFrame, bufferSize:int, dfDemBounds,
                  localCRS, demCRS:str='EPSG:4326') -> xarray.core.dataarray.DataArray:

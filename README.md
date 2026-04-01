@@ -16,6 +16,10 @@ project/
   config/
     paths.example.json
     paths.local.json
+  input_created/
+    dem/
+      FAB_dem_vrt.vrt
+      FAB_dem_bounds.gpkg
   results/
     reference_tables/
     new_segments/
@@ -93,6 +97,25 @@ Notes from the code audit:
 - The current Step 1 entrypoint still assumes exactly one reach file and one node file per continent, because the downstream Step 2 filename logic expects outputs named like `{continent}_{group}_...`
 - The Step 1 path/config layer is now separate from the Step 2+ hard-coded path handling, so the rest of the pipeline still needs the same cleanup pattern later
 
+### Step 1.5: build the FABDEM VRT and bounds cache
+
+Source of truth for this step is the active pipeline code in `pipeline/build_fabdem_index.py`, `pipeline/paths.py`, and `pipeline/dem.py`.
+
+Current Step 1.5 code path:
+- Run `python -m pipeline.build_fabdem_index`
+- `pipeline/build_fabdem_index.py` loads the configured FABDEM source directory from `config/paths.local.json`
+- It collects all FABDEM GeoTIFF tiles from `{fabdem_dir}`
+- It builds the derived DEM cache files used later in the pipeline
+
+Step 1.5 outputs written by code:
+- `input_created/dem/FAB_dem_vrt.vrt`
+- `input_created/dem/FAB_dem_bounds.gpkg`
+
+Notes from the code audit:
+- This is now an explicit intermediate pipeline step instead of an undeclared prerequisite
+- The config is intended to store the source FABDEM directory, while the VRT and bounds paths are derived by the pipeline itself
+- Step 2 and later active DEM-dependent code now read the centralized `input_created/dem/FAB_dem_vrt.vrt` path
+
 ### Step 2: run the first confinement-metric pass on segmented reaches
 
 Source of truth for this step is the default CLI path in `pipeline/main.py`.
@@ -101,13 +124,14 @@ Current Step 2 code path:
 - `pipeline/main.py` reads `continentInput = sys.argv[1]` and `number_of_processors = int(sys.argv[2])`
 - It loads `results/reference_tables/file_sorting.csv`, filters rows for the requested continent, and builds `multiInput = [[filePath, 50], ...]`
 - Under `if __name__ == '__main__':` it runs `Pool(number_of_processors).imap(main, multiInput)`
-- `main(...)` opens the segmented reach/node files from Step 1, reads `results/reference_tables/smoothingFactor.csv`, opens `input_created/FAB_dem_vrt.vrt`, and computes bend/confinement metrics
+- `main(...)` opens the segmented reach/node files from Step 1, reads `results/reference_tables/smoothingFactor.csv`, opens `input_created/dem/FAB_dem_vrt.vrt`, and computes bend/confinement metrics
 
 Step 2 outputs written by code:
 - `results/all/{continent}_{file_id}_50.csv`
 
 Notes from the code audit:
 - Step 2 depends on Step 1 outputs already existing, especially `results/new_segments/...` and `results/reference_tables/file_sorting.csv`
+- Step 2 also depends on Step 1.5 output `input_created/dem/FAB_dem_vrt.vrt`
 - The active code fixes `confFactor = 50` in `pipeline/main.py`
 - These `results/all/*.csv` files are consumed downstream by `pipeline/open_to_single_apex.py` and `pipeline/run_confinement_values_shell.py`
 
@@ -169,7 +193,7 @@ Current Step 5 code path:
 - `run(...)` reads one `results/single_values/{continent}_{file_id}_50.csv` file and calls `calc_confinement_values(...)`
 
 Transformation performed by code:
-- `calc_confinement_values(...)` opens `input_created/FAB_dem_vrt.vrt`
+- `calc_confinement_values(...)` opens `input_created/dem/FAB_dem_vrt.vrt`
 - When reading CSV input, it converts nested list columns such as `distOut`, `distInn`, `elevInn`, and `elevOut` back from strings
 - `ER_slope_margin_values(...)` reads `results/confinement_factor.csv`, assigns the nearest `conFactor` by `bendWidths`, and computes bend-scale confinement outputs
 - The code then derives left/right ER and slope values from `LROrthog`
@@ -181,9 +205,8 @@ Step 5 outputs written by code:
 - `results/single_values/{continent}_{file_id}_50_{hfSave}_conf.nc`
 
 Notes from the code audit:
-- Step 5 depends on Step 3 outputs, Step 4 output `results/confinement_factor.csv`, and `input_created/FAB_dem_vrt.vrt`
+- Step 5 depends on Step 3 outputs, Step 4 output `results/confinement_factor.csv`, and `input_created/dem/FAB_dem_vrt.vrt`
 - The shell script immediately runs aggregation helpers after each `heightFactor`, but I am treating those as the next pipeline step
-- I do not see active code in the current audited flow that creates `input_created/FAB_dem_vrt.vrt`
 
 ### Step 6: aggregate Step 5 outputs by height factor
 

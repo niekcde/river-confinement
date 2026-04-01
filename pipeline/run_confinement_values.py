@@ -2,6 +2,7 @@ from .support import confinement_factor, str_to_list, expand_dataframe, str_to_l
 from .calc_functions import confinement_values
 from .confinement_margin import confinement_margin, get_raster_side
 from .connect_geometries import merge_centerlines
+from .paths import load_project_paths
 
 import numpy as np
 import os
@@ -15,6 +16,7 @@ from tqdm import tqdm
 from osgeo import gdal 
 from glob import glob
 gdal.UseExceptions()
+PROJECT_PATHS = load_project_paths()
 
 def ER_slope_margin_values(dfInc,demVRT,directory, cf = [50,10], heightFactor = 2):
     # singleF = glob(directory + f'results/single_values/*{confSize}.csv')
@@ -83,8 +85,12 @@ def ER_slope_margin_values(dfInc,demVRT,directory, cf = [50,10], heightFactor = 
 def calc_confinement_values(df,fileName, directory, returnDataframe, open_seperate = False,
                             crossFactor = 50, hf = 2):
     print(f'run_confinement_values - calc_confinement_values: {fileName}')
-    vrt_file = directory + "input_created/FAB_dem_vrt.vrt"
+    vrt_file = str(PROJECT_PATHS.fabdem_vrt)
     demVRT   = gdal.Open(vrt_file)
+    if demVRT is None:
+        raise FileNotFoundError(
+            f"FABDEM VRT not found at {vrt_file}. Run 'python -m pipeline.build_fabdem_index' first."
+        )
 
     hfSave = f'{hf}'
     if hf < 10:
