@@ -119,7 +119,7 @@ def multi_save_raster_reach(multiInput):
 
 if __name__ == '__main__':
     files = np.sort(glob(directory + 'results/new_segments/vector/*'))
-    sortFiles = pd.read_csv(directory + 'results/file_sorting.csv')
+    sortFiles = pd.read_csv(directory + 'results/reference_tables/file_sorting.csv')
     sortFiles = sortFiles.sort_values('size')
 
 

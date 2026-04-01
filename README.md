@@ -17,6 +17,7 @@ project/
     paths.example.json
     paths.local.json
   results/
+    reference_tables/
     new_segments/
       vector/
       node/
@@ -79,9 +80,9 @@ Current Step 1 code path:
 Step 1 outputs written by code:
 - `results/new_segments/vector/{file}_{group}_reach_new_segments.gpkg`
 - `results/new_segments/node/{file}_{group}_node_new_segments.gpkg`
-- `results/SWORD_stats.csv`
-- `results/smoothingFactor.csv`
-- `results/file_sorting.csv`
+- `results/reference_tables/SWORD_stats.csv`
+- `results/reference_tables/smoothingFactor.csv`
+- `results/reference_tables/file_sorting.csv`
 - `results/new_segments/vector_cont/{continent}_reaches.gpkg`
 
 Notes from the code audit:
@@ -98,15 +99,15 @@ Source of truth for this step is the default CLI path in `pipeline/main.py`.
 
 Current Step 2 code path:
 - `pipeline/main.py` reads `continentInput = sys.argv[1]` and `number_of_processors = int(sys.argv[2])`
-- It loads `results/file_sorting.csv`, filters rows for the requested continent, and builds `multiInput = [[filePath, 50], ...]`
+- It loads `results/reference_tables/file_sorting.csv`, filters rows for the requested continent, and builds `multiInput = [[filePath, 50], ...]`
 - Under `if __name__ == '__main__':` it runs `Pool(number_of_processors).imap(main, multiInput)`
-- `main(...)` opens the segmented reach/node files from Step 1, reads `results/smoothingFactor.csv`, opens `input_created/FAB_dem_vrt.vrt`, and computes bend/confinement metrics
+- `main(...)` opens the segmented reach/node files from Step 1, reads `results/reference_tables/smoothingFactor.csv`, opens `input_created/FAB_dem_vrt.vrt`, and computes bend/confinement metrics
 
 Step 2 outputs written by code:
 - `results/all/{continent}_{file_id}_50.csv`
 
 Notes from the code audit:
-- Step 2 depends on Step 1 outputs already existing, especially `results/new_segments/...` and `results/file_sorting.csv`
+- Step 2 depends on Step 1 outputs already existing, especially `results/new_segments/...` and `results/reference_tables/file_sorting.csv`
 - The active code fixes `confFactor = 50` in `pipeline/main.py`
 - These `results/all/*.csv` files are consumed downstream by `pipeline/open_to_single_apex.py` and `pipeline/run_confinement_values_shell.py`
 

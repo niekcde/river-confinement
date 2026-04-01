@@ -66,6 +66,10 @@ class ProjectPaths:
         return self.new_segments_root / "vector_cont"
 
     @property
+    def reference_tables_dir(self) -> Path:
+        return self.results_root / "reference_tables"
+
+    @property
     def all_dir(self) -> Path:
         return self.results_root / "all"
 
@@ -96,6 +100,7 @@ class ProjectPaths:
             self.new_segments_vector_dir,
             self.new_segments_node_dir,
             self.new_segments_vector_cont_dir,
+            self.reference_tables_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

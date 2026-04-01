@@ -51,6 +51,7 @@ from .smoothing import SG_smoothing
 create_dir(directory + 'input_created')
 create_dir(directory + 'input_created/dem')
 create_dir(directory + 'results')
+create_dir(directory + 'results/reference_tables')
 create_dir(directory + 'results/new_segments')
 create_dir(directory + 'results/new_segments/node')
 create_dir(directory + 'results/new_segments/vector')
@@ -92,7 +93,7 @@ def main(multiInput):
 
         #%% Calc values
         ids = df.loc[df['include_flag'] == '0','combined_reach_id'].unique()
-        dfSF = pd.read_csv(directory + 'results/smoothingFactor.csv')
+        dfSF = pd.read_csv(directory + 'results/reference_tables/smoothingFactor.csv')
         
         vrt_file = directory + "input_created/FAB_dem_vrt.vrt"
         demVRT   = gdal.Open(vrt_file)
@@ -286,7 +287,7 @@ def main(multiInput):
 continentInput       = sys.argv[1]  # First argument
 number_of_processors = int(sys.argv[2])  # Second argument
 
-dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
+dfFiles = pd.read_csv(directory + 'results/reference_tables/file_sorting.csv', index_col = 0)
 dfFiles = dfFiles[dfFiles['file'].str.startswith(continentInput)].sort_values('size', ascending = False)
 files = dfFiles['filePath'].values
 print(files, continentInput, number_of_processors)

@@ -83,7 +83,7 @@ def run(input):
     calc_confinement_values(df, file[-12:-4], directory, False, True, crossFactor, input[1])
 
 
-# dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
+# dfFiles = pd.read_csv(directory + 'results/reference_tables/file_sorting.csv', index_col = 0)
 # sorting = list(dfFiles.sort_values('file')['size'].argsort().values[::-1])
 # allResultFiles = np.array(allResultFiles)
 # allResultFiles = allResultFiles[sorting]
