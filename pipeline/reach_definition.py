@@ -1,11 +1,6 @@
 ##########################################
 # set directory
 ##########################################
-directory = '/scratch/6256481/'
-
-##########################################
-# import packages
-##########################################
 import geopandas as gpd
 import pandas as pd
 import numpy as np
@@ -29,6 +24,7 @@ from typing import List, Tuple
 ##########################################
 # import custom modules
 ##########################################
+from .paths import resolve_results_root
 from .support import get_local_utm_projection, find_connected_side
 from .line_functions import azimuth
 
@@ -1139,6 +1135,9 @@ def new_reach_definition(df, dfNode,min_reach_len_factor, directory, fileName, s
     df = connected_ucr_dcr(df)
 
     if save == True:
+        results_root = resolve_results_root(directory)
+        vector_dir = results_root / "new_segments" / "vector"
+        node_dir = results_root / "new_segments" / "node"
         dfSave = df.copy()
         dfSave[['rch_id_up', 'rch_id_dn', 
                 'rch_id_up_orig', 'rch_id_dn_orig']] = dfSave[['rch_id_up', 'rch_id_dn',
@@ -1151,17 +1150,22 @@ def new_reach_definition(df, dfNode,min_reach_len_factor, directory, fileName, s
             if group < 10:
                 groupString =  f'0{groupString}'
             
-            dfGroupSave.to_file(directory + f'results/new_segments/vector/{fileName}_{groupString}_reach_new_segments.gpkg', driver = 'GPKG')
-            dfNodeSave.to_file(directory + f'results/new_segments/node/{fileName}_{groupString}_node_new_segments.gpkg', driver = 'GPKG')
+            dfGroupSave.to_file(vector_dir / f'{fileName}_{groupString}_reach_new_segments.gpkg', driver = 'GPKG')
+            dfNodeSave.to_file(node_dir / f'{fileName}_{groupString}_node_new_segments.gpkg', driver = 'GPKG')
     
 
     return df, dfNode
 
-def create_continent_new_reach(cs):
+def create_continent_new_reach(cs, directory):
+    results_root = resolve_results_root(directory)
+    vector_dir = results_root / "new_segments" / "vector"
+    vector_cont_dir = results_root / "new_segments" / "vector_cont"
 
     for c in cs:
         print(c)
-        files = np.sort(glob(directory +f'results/new_segments/vector/{c}_??_*.gpkg'))
+        files = np.sort(glob(str(vector_dir / f'{c}_??_*.gpkg')))
+        if len(files) == 0:
+            continue
         print(files)
         for i, f in enumerate(files):
             D = gpd.read_file(f)
@@ -1172,4 +1176,4 @@ def create_continent_new_reach(cs):
             else:
                 dfT = pd.concat([dfT, D])
         dfT['file'] = dfT['file_cont'] + '_' + dfT['file_id']
-        dfT.to_file(directory + f'results/new_segments/vector_cont/{c}_reaches.gpkg', driver = 'GPKG')
+        dfT.to_file(vector_cont_dir / f'{c}_reaches.gpkg', driver = 'GPKG')

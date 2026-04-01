@@ -10,21 +10,40 @@ Impact:
 
 Examples in current active code:
 - `pipeline/main.py`
-- `pipeline/reach_definition.py`
 - `pipeline/open_to_single_apex.py`
 - `pipeline/run_confinement_values_shell.py`
 - `pipeline/run_confinement_values.py` default argument
+- `pipeline/select_raster.py`
+- `pipeline/spatial_smoothing.py`
+- `pipeline/clustering_confinement.py`
 
-## 2. Step 1 is embedded inside `pipeline/main.py`
+## 2. Step 1 entrypoint separation
 
-The segmented-reach prerequisite generation is part of `pipeline/main.py` via `run_create_new_reaches_main(...)` and `create_new_reaches_main(...)`, gated by `create_new = False`, instead of being exposed as a separate stable entrypoint.
+Status update:
+- Initial fix implemented: Step 1 now has a dedicated entrypoint in `pipeline/segment_reaches.py`
+- Step 1 paths are now loaded through `pipeline/paths.py` and `config/paths.local.json`
+
+Remaining follow-up:
+- Move the later stages onto the same config-driven path system so Step 1 and Step 2+ use one consistent project layout
+
+Impact that remains:
+- Step 1 is now cleanly separated, but the rest of the pipeline still mixes the old hard-coded layout with the new Step 1 path configuration
+
+## 15. Step 1 still assumes one reach file and one node file per continent
+
+The new `pipeline/segment_reaches.py` entrypoint currently fails if more than one `*17*.gpkg` reach file or node file is found for a continent.
+
+Why this exists:
+- The downstream active pipeline still assumes Step 1 outputs are named like `{continent}_{group}_...`
+- That naming scheme comes from `new_reach_definition(...)`, where `group` is the segmented network-group id used later by `pipeline/main.py`
 
 Impact:
-- The pipeline start is harder to discover and run
-- Step 1 and Step 2 are coupled inside one script even though Step 2 depends on Step 1 outputs
+- Step 1 is now stable and explicit, but it is not yet generalized to multi-file-per-continent source layouts
+- Supporting multiple source files per continent will require aligning Step 2 and the later file-sorting logic, not just Step 1
 
 Follow-up direction:
-- Split Step 1 into its own dedicated entrypoint without changing file layout yet
+- Keep the current one-file-per-continent assumption for now
+- Revisit this only when the later stages are refactored onto the same path/file naming system
 
 ## 3. Step 3 has duplicated entrypoints
 

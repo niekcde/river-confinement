@@ -24,6 +24,7 @@ from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 
 
 # import custom modules
+from .paths import resolve_results_root
 from .calc_functions import get_entrenchment_slope_intersect,\
       get_entrenchment_slope_no_intersect, slope_curvature
 # from confinement_margin import confinement_margin
@@ -838,6 +839,7 @@ def create_custom_cmap(colors : 'list',continuous = False, demMap  : 'bool'= Tru
     return cmap
 
 def SWORD_stats(df, directory):
+    results_root = resolve_results_root(directory)
     dfT = df.copy()
 
     dfInc = dfT[dfT['include_flag'] == '0']
@@ -866,7 +868,7 @@ def SWORD_stats(df, directory):
                             'width_quantile95'   : contF['combined_reach_width'].quantile(0.95), 'max_width_quantile95' : contF['combined_reach_max_width'].quantile(0.95)}, index = [0])
 
         dfStat = pd.concat([dfStat, temp],ignore_index = True)
-    dfStat.to_csv(directory + 'results/SWORD_stats.csv')
+    dfStat.to_csv(results_root / 'SWORD_stats.csv')
 
 def shaped_logarithmic(x,quant, FMax, FMin, shape=1.0):
     
@@ -894,6 +896,7 @@ def shaped_lineair(x, quantL, quantH, y2, y1):
     return (a*x +b)
 
 def smooth_factor(df, directory):
+    results_root = resolve_results_root(directory)
     dfInc  = df[df['include_flag'] == '0'].copy()
 
     dfIncG = dfInc.groupby('combined_reach_id').first()
@@ -902,18 +905,19 @@ def smooth_factor(df, directory):
     dfIncG['smoothFactor'] = shaped_lineair(dfIncG['combined_reach_width'].copy(), 0.05,0.95, 1, 5)
     
     dfSM = dfIncG[['smoothFactor', 'combined_reach_width']].reset_index().copy()
-    dfSM.to_csv(directory + 'results/smoothingFactor.csv')
+    dfSM.to_csv(results_root / 'smoothingFactor.csv')
 
 def file_sorting(dfT, directory):
+    results_root = resolve_results_root(directory)
     dfSize = dfT.loc[dfT['include_flag'] == '0'].groupby(['file'],as_index = False).size()
     dfSize = dfSize.sort_values('size', ascending = False)
 
-    files = np.sort(glob(directory + 'results/new_segments/vector/??_??_*.gpkg'))
+    files = np.sort(glob(str(results_root / 'new_segments' / 'vector' / '??_??_*.gpkg')))
     fNames = [f'{file[-29:-27]}_{file[-26:-24]}' for file in files]
     dfFiles = pd.DataFrame({'file': fNames, 'filePath': files})
     
     dfFiles = dfFiles.merge(dfSize, how = 'left', on = 'file').sort_values('size', ascending = False)
-    dfFiles.to_csv(directory +'results/file_sorting.csv')
+    dfFiles.to_csv(results_root / 'file_sorting.csv')
 
 def node_position(line, dfN):
     dfN = dfN.copy()

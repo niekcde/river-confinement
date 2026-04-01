@@ -1,18 +1,80 @@
 # river-morphology
 Code for analysing SWORD data and creating a different river morpohlogy metrics
 
+## Planned Target Structure
+
+This section is the working reference for the cleanup/refactor. It describes the intended stable project structure, not the claim that every part is already fully implemented.
+
+Target layout:
+
+```text
+project/
+  code/
+    pipeline/
+    analysis/
+    old/
+  config/
+    paths.example.json
+    paths.local.json
+  results/
+    new_segments/
+      vector/
+      node/
+      vector_cont/
+    all/
+    single_values/
+    reach_averaged/
+    single_smoothed/
+    logs/
+    tmp/
+  data/                     # optional
+  README.md
+  ISSUES.md
+  environment.yml
+```
+
+Design rules for this target structure:
+- `code/` holds repository code only
+- `pipeline/` holds active pipeline and final-workflow code
+- `analysis/` holds additional or currently unused analysis scripts and notebooks
+- `old/` holds legacy or redundant code
+- `results/` holds all generated outputs from the pipeline
+- `data/` is optional and should not be mandatory for running the code if shared project data already exists elsewhere
+
+Data-location principle:
+- The code should support both a local project `data/` folder and an external shared data location
+- The preferred long-term mechanism is a small local config file where the user sets a few root paths once
+- The pipeline should then derive the rest of its paths from that config instead of hard-coded absolute paths
+
+Planned path-config idea:
+- `config/paths.example.json` documents the expected keys
+- `config/paths.local.json` is user-specific and not intended as a shared hard-coded project path file
+- Typical keys will include a results root plus shared-data roots such as SWORD vectors, SWORD nodes, and FABDEM
+
+Current implementation status:
+- The initial path-config layer is now in place for Step 1 via `pipeline/paths.py`
+- `config/paths.local.json` is the intended user-specific override file and is gitignored
+- Later pipeline steps still need to be migrated onto the same config-driven path system
+
+Implementation note:
+- The physical top-level organization may move toward `code/`
+- The importable Python package should remain `pipeline`, not `code`, to avoid conflicts with Python's standard library `code` module
+
 ## Confinement pipeline audit
 
 ### Step 1: build segmented reach inputs and prerequisite tables
 
-Source of truth for this step is the active pipeline code in `pipeline/main.py`, `pipeline/reach_definition.py`, and `pipeline/support.py`.
+Source of truth for this step is the active pipeline code in `pipeline/segment_reaches.py`, `pipeline/paths.py`, `pipeline/reach_definition.py`, and `pipeline/support.py`.
 
-The first pipeline step is the prerequisite-generation path inside `pipeline/main.py`. The default CLI path later in `pipeline/main.py` depends on outputs from this step, so `pipeline/run_confinement_values_shell.py` is not the start of the pipeline.
+The first pipeline step is now a dedicated segmentation entrypoint. The default CLI path later in `pipeline/main.py` depends on outputs from this step, so `pipeline/run_confinement_values_shell.py` is not the start of the pipeline.
 
 Current Step 1 code path:
-- `pipeline/main.py` -> `run_create_new_reaches_main(...)` -> `create_new_reaches_main(...)`
-- `create_new_reaches_main(...)` reads `input/SWOT_vector/{continent}*17*gpkg` and `input/SWOT_nodes/{continent}*17*gpkg`
+- Run `python -m pipeline.segment_reaches [continents...]`
+- `pipeline/segment_reaches.py` -> `run_step1_segmentation(...)` -> `segment_continent(...)`
+- `pipeline/paths.py` loads `config/paths.local.json` when present, otherwise falls back to local `data/` or legacy `input/` locations
+- `segment_continent(...)` reads `{swot_vector_dir}/{continent}*17*gpkg` and `{swot_nodes_dir}/{continent}*17*gpkg`
 - For each vector/node pair it calls `new_reach_definition(..., save=True)`
+- `pipeline/segment_reaches.py` -> `build_step1_reference_tables(...)` rebuilds the prerequisite CSVs and continent-level segmented outputs
 
 Step 1 outputs written by code:
 - `results/new_segments/vector/{file}_{group}_reach_new_segments.gpkg`
@@ -23,10 +85,12 @@ Step 1 outputs written by code:
 - `results/new_segments/vector_cont/{continent}_reaches.gpkg`
 
 Notes from the code audit:
-- This first step is currently gated in `pipeline/main.py` behind `create_new = False`
+- This first step now has its own stable entrypoint in `pipeline/segment_reaches.py`
+- `pipeline/main.py` now starts at Step 2
 - There is no `.sh`, `.bash`, or `.zsh` pipeline entrypoint in this repository
 - Multiple active scripts hard-code `directory = '/scratch/6256481/'`; that external path was not verified in this session
-- `pipeline/main.py` creates `results/new_segments/vector/` and `results/new_segments/node/`, but I do not see code here creating `results/new_segments/vector_cont/` before `create_continent_new_reach(...)` writes to it
+- The current Step 1 entrypoint still assumes exactly one reach file and one node file per continent, because the downstream Step 2 filename logic expects outputs named like `{continent}_{group}_...`
+- The Step 1 path/config layer is now separate from the Step 2+ hard-coded path handling, so the rest of the pipeline still needs the same cleanup pattern later
 
 ### Step 2: run the first confinement-metric pass on segmented reaches
 

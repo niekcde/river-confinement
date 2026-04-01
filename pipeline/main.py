@@ -28,9 +28,7 @@ print('load Packages')
 import glob
 import os
 from datetime import datetime as dt
-from tqdm import tqdm 
 import sys
-import gc
 import re
 
 import geopandas as gpd
@@ -44,10 +42,7 @@ from scipy.stats import trim_mean
 # %% Import custom modules
 from .inflection_points import inflection_points_curve
 from .get_orthogonals import get_orthogonals
-from .support import create_dir, SWORD_stats, smooth_factor,\
-                    file_sorting, node_position, adjust_new_segments,\
-                    check_memory
-from .reach_definition import new_reach_definition, create_continent_new_reach
+from .support import create_dir, node_position, adjust_new_segments
 from .connect_geometries import merge_centerlines
 from .smoothing import SG_smoothing
 
@@ -285,97 +280,11 @@ def main(multiInput):
 
 
         print(f'Finish: {contName}_{fileNumber} with cross slope {confFactor}, code failures: {code_failure}. Time: {dt.now()}')
-  
-
-
-#%%
-def create_new_reaches_main(c):
-    reachFiles = glob.glob(directory + f'input/SWOT_vector/{c}*17*gpkg')
-    nodeFiles  = glob.glob(directory + f'input/SWOT_nodes/{c}*17*gpkg')
-    # print(reachFiles[0][-25:-23])
-    
-    print('Create new files')
-    for i, fr in enumerate(reachFiles):
-        fileName = fr[-25:-23]
-        existingFiles = glob.glob(directory + f'results/new_segments/vector/{fileName}*')
-        
-        for ef in existingFiles:
-            print(f'remove: {ef}')
-            os.remove(ef)
-        print(fileName)
-        
-        fn = nodeFiles[i]
-        
-        dfIn     = gpd.read_file(fr)
-        dfNodeIn = gpd.read_file(fn)
-
-        new_reach_definition(dfIn,dfNodeIn,4*12, directory, fileName, save = True)
-
-def run_create_new_reaches_main(continents:'list'):
-    create_new_stat = True
-
-
-    print('start multiproces')
-    with Pool(len(continents)) as p:
-        p.imap(create_new_reaches_main, continents)
-        p.close()
-        p.join()
-    print('Multiproces Done')
-    # always run with all for update in any continent
-    create_continent_new_reach(['af', 'eu', 'na', 'sa', 'as', 'oc'])
-    if create_new_stat == True:
-        files = np.sort(glob.glob(directory +f'results/new_segments/vector/??_??_*.gpkg'))
-        for i, f in enumerate(files):
-            D = gpd.read_file(f)
-            D['file_cont'] = f[-29:-27]
-            D['file_id']   = f[-26:-24]
-            if i == 0:
-                dfT = D.copy()
-            else:
-                dfT = pd.concat([dfT, D])
-        dfT['file'] = dfT['file_cont'] + '_' + dfT['file_id']
-        # dfInc = dfT[dfT['include_flag'] == '0']
-
-        SWORD_stats(dfT, directory)
-        smooth_factor(dfT, directory)
-        file_sorting(dfT, directory)
-
-
-# create_new_reaches_main('af')
-create_new    = False
-if create_new == True:
-    run_create_new_reaches_main(['af', 'eu', 'na', 'sa', 'as', 'oc'])
-# print('run new reach def ready')
-
-# # newsegment files
-# dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
-# dfFiles = dfFiles.sort_values('size', ascending = False)
-# dfFiles = dfFiles.sort_values('filePath', ascending = True)
-# dfFiles = dfFiles[dfFiles['file'].str.startswith('sa')].sort_values('size', ascending = False)
-
-# files = dfFiles['filePath'].values
-
-# files = [files[-1]]
-
-# confFactor = 50
-# tm1 = dt.now()
-# for f in files:
-
-#     cont = f[-29:-27] 
-#     cont_reg = f[-26:-24]
-#     print(cont, cont_reg)
-#     df = main([f, confFactor])
-#     print(dt.now() - tm1)
 
 
 #%%
 continentInput       = sys.argv[1]  # First argument
 number_of_processors = int(sys.argv[2])  # Second argument
-
-create_new      = False
-if create_new == True:
-    run_create_new_reaches_main([continentInput])
-
 
 dfFiles = pd.read_csv(directory + 'results/file_sorting.csv', index_col = 0)
 dfFiles = dfFiles[dfFiles['file'].str.startswith(continentInput)].sort_values('size', ascending = False)
