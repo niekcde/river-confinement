@@ -16,8 +16,6 @@ from shapely.geometry import Point, LineString
 from scipy.spatial.distance import directed_hausdorff
 from datetime import datetime as dt
 
-import matplotlib.pyplot as plt
-
 # def inflection_points(vector : 'shapely.geometry.LineString',
     #                   df : 'gpd.GeoPandasDataFrame',DFNode : 'gpd.GeopandasDataFrame',
     #                   projection : 'str',

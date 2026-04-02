@@ -24,7 +24,7 @@ def apply_smoothing(line, w):
     SG  = LineString(list(zip(XSG, YSG)))
     
     return SG
-import matplotlib.pyplot as plt
+
 def SG_smoothing(line, w, width, seg = 1, simp = 0.1, simplify_line = True,  id = 9999):
     """Function that used a savtisky Golay filter from scipy to smooth a linestring.
     A hausdorf distance larger than 0.5*width creates new iteration with smaller smoothing window

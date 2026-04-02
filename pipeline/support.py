@@ -15,12 +15,12 @@ import numpy as np
 import ast
 import json
 import psutil
+import re
 from osgeo import gdal
 
 # import partial packages
 from shapely.geometry import LineString
 from glob import glob
-from matplotlib.colors import LinearSegmentedColormap, ListedColormap
 
 
 # import custom modules
@@ -830,6 +830,8 @@ def create_custom_cmap(colors : 'list',continuous = False, demMap  : 'bool'= Tru
             demMap: Select predetermined dem colormap (default = True) \n
         output: cmap
     """
+    from matplotlib.colors import LinearSegmentedColormap, ListedColormap
+
     if demMap == True:
         colors = ['purple', 'blue', 'cyan', 'green', 'yellow', 'red']
     if continuous == True:
@@ -963,13 +965,44 @@ def str_to_list(df, listCols, nestedListCols):
                 continue
             else:
                 if col in nestedListCols:
-                    rc = r[col].replace('(', '').replace(')', '')
-                    colVal = json.loads(rc)
+                    colVal = parse_nested_list_string(r[col])
                 else:
 
                     colVal = ast.literal_eval(r[col])
             df.at[i, col] = colVal
     return df
+
+
+def _replace_none_with_nan(value):
+    if isinstance(value, list):
+        return [_replace_none_with_nan(item) for item in value]
+    if value is None:
+        return np.nan
+    return value
+
+
+def parse_nested_list_string(value):
+    if isinstance(value, float):
+        return np.nan
+    if isinstance(value, list):
+        return value
+
+    text = str(value).strip()
+    if text in ("", "nan", "None"):
+        return np.nan
+
+    # Step 2 currently serializes sampled profiles as stringified numpy scalars,
+    # for example `np.float32(21.0)` or `np.float3221.0`. Normalize those to
+    # plain numeric JSON before decoding the nested list.
+    text = re.sub(r"np\.float(?:16|32|64|128)\(", "", text)
+    text = re.sub(r"np\.float(?:16|32|64|128)", "", text)
+    text = re.sub(r"np\.int(?:8|16|32|64)\(", "", text)
+    text = re.sub(r"np\.int(?:8|16|32|64)", "", text)
+    text = text.replace(")", "")
+    text = re.sub(r"\bnan\b", "null", text)
+    text = re.sub(r"\bNone\b", "null", text)
+
+    return _replace_none_with_nan(json.loads(text))
 
 def str_to_list_comb(df, listCols, nestedListCols):
 
@@ -987,8 +1020,7 @@ def str_to_list_comb(df, listCols, nestedListCols):
                 continue
             else:
                 if col in nestedListCols:
-                    rc = r[col].replace('(', '').replace(')', '')
-                    colVal = json.loads(rc)
+                    colVal = parse_nested_list_string(r[col])
                 else:
                     colVal = ast.literal_eval(r[col])
             dfN.at[i, col] = colVal

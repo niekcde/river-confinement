@@ -5,6 +5,7 @@ Created on Tue Apr 30 09:58:07 2024
 
 @author: niekcollotdescury
 """
+import numpy as np
 import xarray as xr
 
 
@@ -19,26 +20,22 @@ def extract_slope_along_raster_line(xarr, line, samples = 400):
     - Elevation values for the slope Line
         '''
     profile = []
-    dist    = [] 
-    
-    xs, xy = [],[]
-    for i in range(samples):
-        point = line.interpolate(i  / samples - 1. , normalized=True)
-        
-        xs.append(point.x)
-        xy.append(point.y)
-            # access the nearest pixel in the xarray
-        tgt_x = xr.DataArray(xs, dims="points")
-        tgt_y = xr.DataArray(xy, dims="points")
+    dist    = []
 
-        dist.append(line.project(point))
-    
+    sample_positions = np.arange(samples, dtype=float) / samples - 1.0
+    points = [line.interpolate(position, normalized=True) for position in sample_positions]
+
+    xs = [point.x for point in points]
+    ys = [point.y for point in points]
+    tgt_x = xr.DataArray(xs, dims="points")
+    tgt_y = xr.DataArray(ys, dims="points")
+    dist = [line.project(point) for point in points]
+
     profile = xarr.sel(x=tgt_x, y=tgt_y, method="nearest").data
     if len(profile) == 1:
         profile = profile[0]
     
     return dist, profile
-
 
 
 

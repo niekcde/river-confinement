@@ -2,4 +2,3 @@ config/paths.local.json
 __pycache__/
 *.pyc
 results/
-input_created/

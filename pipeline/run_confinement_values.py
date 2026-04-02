@@ -1,24 +1,80 @@
 from .support import confinement_factor, str_to_list, expand_dataframe, str_to_list_comb
 from .calc_functions import confinement_values
-from .confinement_margin import confinement_margin, get_raster_side
-from .connect_geometries import merge_centerlines
-from .paths import load_project_paths
+from .paths import load_project_paths, resolve_results_root, format_factor_token
 
 import numpy as np
 import os
 import pandas as pd
-import shapely
-import geopandas as gpd
-import xarray as xr
+from pathlib import Path
 
-from scipy.spatial import KDTree
 from tqdm import tqdm 
-from osgeo import gdal 
 from glob import glob
-gdal.UseExceptions()
-PROJECT_PATHS = load_project_paths()
 
-def ER_slope_margin_values(dfInc,demVRT,directory, cf = [50,10], heightFactor = 2):
+def _format_height_factor(hf):
+    if isinstance(hf, float) and hf.is_integer():
+        hf = int(hf)
+    hf_save = f"{hf}"
+    if hf < 10:
+        hf_save = f"0{hf}"
+    return hf_save
+
+
+def _resolve_step5_paths(directory=None, config_path=None, conf_factor=50):
+    project_paths = load_project_paths(config_path)
+    if directory is None:
+        project_paths.ensure_step5_dirs()
+        results_root = project_paths.results_root
+        single_values_dir = project_paths.single_values_dir
+        reach_averaged_dir = project_paths.reach_averaged_dir
+        confinement_factor_file = project_paths.confinement_factor_file_for(conf_factor)
+    else:
+        results_root = resolve_results_root(directory)
+        single_values_dir = results_root / "single_values"
+        reach_averaged_dir = results_root / "reach_averaged"
+        reference_tables_dir = results_root / "reference_tables"
+        for path in (results_root, reference_tables_dir, single_values_dir, reach_averaged_dir):
+            path.mkdir(parents=True, exist_ok=True)
+        confinement_factor_file = reference_tables_dir / f"confinement_factor_{format_factor_token(conf_factor)}.csv"
+
+    return {
+        "project_paths": project_paths,
+        "results_root": results_root,
+        "single_values_dir": single_values_dir,
+        "reach_averaged_dir": reach_averaged_dir,
+        "confinement_factor_file": confinement_factor_file,
+    }
+
+
+def _resolve_step6_paths(directory=None, config_path=None):
+    project_paths = load_project_paths(config_path)
+    if directory is None:
+        project_paths.ensure_step5_dirs()
+        results_root = project_paths.results_root
+        single_values_dir = project_paths.single_values_dir
+        reach_averaged_dir = project_paths.reach_averaged_dir
+    else:
+        results_root = resolve_results_root(directory)
+        single_values_dir = results_root / "single_values"
+        reach_averaged_dir = results_root / "reach_averaged"
+        for path in (results_root, single_values_dir, reach_averaged_dir):
+            path.mkdir(parents=True, exist_ok=True)
+
+    return {
+        "project_paths": project_paths,
+        "results_root": results_root,
+        "single_values_dir": single_values_dir,
+        "reach_averaged_dir": reach_averaged_dir,
+    }
+
+
+def ER_slope_margin_values(dfInc,demVRT,directory = None, cf = [50,10], heightFactor = 2,
+                           config_path = None):
+    from scipy.spatial import KDTree
+    import geopandas as gpd
+    import shapely
+
+    from .connect_geometries import merge_centerlines
+
     # singleF = glob(directory + f'results/single_values/*{confSize}.csv')
     # dfE     = open_single_values(singleF)
     # dfInc = dfE[(dfE['include_flag'] == '0') & (dfE['calculated'] == '0000')]
@@ -26,7 +82,14 @@ def ER_slope_margin_values(dfInc,demVRT,directory, cf = [50,10], heightFactor = 
     print(f'run_confinement_values - calc_confinement_values - ER_slope_margin_values: Start')
     
     # Find confinement factor value
-    dfCF = pd.read_csv(directory + 'results/confinement_factor.csv')
+    step5_paths = _resolve_step5_paths(directory, config_path, cf[0])
+    confinement_factor_file = step5_paths["confinement_factor_file"]
+    if confinement_factor_file.exists() is False:
+        raise FileNotFoundError(
+            f"Confinement factor table not found at {confinement_factor_file}. "
+            "Run 'python -m pipeline.build_step4_confinement_factor' first."
+        )
+    dfCF = pd.read_csv(confinement_factor_file)
     # Using KDTree for efficient nearest neighbor search
     tree = KDTree(dfCF[['bendWidths']].values)
     _, idx = tree.query(dfInc[['bendWidths']].values)
@@ -83,24 +146,35 @@ def ER_slope_margin_values(dfInc,demVRT,directory, cf = [50,10], heightFactor = 
     return dfInc, crGeoms
 
 def calc_confinement_values(df,fileName, directory, returnDataframe, open_seperate = False,
-                            crossFactor = 50, hf = 2):
+                            crossFactor = 50, hf = 2, config_path = None):
+    from osgeo import gdal
+    import geopandas as gpd
+
     print(f'run_confinement_values - calc_confinement_values: {fileName}')
-    vrt_file = str(PROJECT_PATHS.fabdem_vrt)
+    gdal.UseExceptions()
+    step5_paths = _resolve_step5_paths(directory, config_path, crossFactor)
+    project_paths = step5_paths["project_paths"]
+    vrt_file = str(project_paths.fabdem_vrt)
     demVRT   = gdal.Open(vrt_file)
     if demVRT is None:
         raise FileNotFoundError(
             f"FABDEM VRT not found at {vrt_file}. Run 'python -m pipeline.build_fabdem_index' first."
         )
 
-    hfSave = f'{hf}'
-    if hf < 10:
-        hfSave = f'0{hf}'
+    hfSave = _format_height_factor(hf)
 
     if open_seperate == True:
         listCols = ['distOut', 'distInn', 'elevInn', 'elevOut']
         df = str_to_list(df, listCols, listCols)
 
-    dfE, crGeoms = ER_slope_margin_values(df, demVRT, directory, [50,10], hf)
+    dfE, crGeoms = ER_slope_margin_values(
+        df,
+        demVRT,
+        directory,
+        [50,10],
+        hf,
+        config_path=config_path,
+    )
 
     ########################################
     # Save reach averaged gpkg
@@ -115,7 +189,8 @@ def calc_confinement_values(df,fileName, directory, returnDataframe, open_sepera
 
 
     gdfEG = gpd.GeoDataFrame(dfEG, geometry = crGeoms, crs = 'EPSG:4326')
-    gdfEG.to_file(directory + f'results/reach_averaged/{fileName}_{hfSave}.gpkg', driver = 'GPKG')
+    reach_averaged_file = step5_paths["reach_averaged_dir"] / f"{fileName}_{hfSave}.gpkg"
+    gdfEG.to_file(reach_averaged_file, driver = 'GPKG')
     
     ########################################
     # Save reduced bend gpkg
@@ -127,7 +202,8 @@ def calc_confinement_values(df,fileName, directory, returnDataframe, open_sepera
                 'slope_out', 'slope_inn', 'slope_left', 'slope_right',
                 'bendDistOut', 'bendLen']
     dfE_bend = gpd.GeoDataFrame(dfE[saveCols].copy(), geometry = dfE['bendGeom'], crs= 'EPSG:4326')
-    dfE_bend.to_file(directory + f'results/single_values/{fileName}_{hfSave}_conf.gpkg', driver = 'GPKG')
+    bend_gpkg_file = step5_paths["single_values_dir"] / f"{fileName}_{hfSave}_conf.gpkg"
+    dfE_bend.to_file(bend_gpkg_file, driver = 'GPKG')
 
 
     dfE = dfE.drop(['elevOut', 'elevInn', 'distOut', 
@@ -135,51 +211,68 @@ def calc_confinement_values(df,fileName, directory, returnDataframe, open_sepera
     dfE['apex'] = dfE['apex'].astype('float64')
     # save nc File
     dfIncX = dfE.to_xarray()
-    ncFile = directory + f'results/single_values/{fileName}_{hfSave}_conf.nc'
-    if os.path.exists(ncFile):
-        os.remove(ncFile)
+    ncFile = step5_paths["single_values_dir"] / f"{fileName}_{hfSave}_conf.nc"
+    if ncFile.exists():
+        ncFile.unlink()
     
     dfIncX.to_netcdf(ncFile)
 
     if returnDataframe == True:
         return dfE
 
-def concat_nc_conf_files(directory, cross, hf = 2):
+def concat_nc_conf_files(directory = None, cross = 50, hf = 2, config_path = None):
+    import xarray as xr
+
+    step6_paths = _resolve_step6_paths(directory, config_path)
+    cross_token = format_factor_token(cross)
+    hf_token = _format_height_factor(hf)
     dsList = []
-    if hf <10:
-        hf = f'0{hf}'
     
     for c in ['af', 'as', 'sa', 'na', 'oc', 'eu']:
         print(c)
-        files = glob(directory + f'results/single_values/{c}*{cross}*{hf}*conf.nc')
+        files = sorted(step6_paths["single_values_dir"].glob(f"{c}_??_{cross_token}_{hf_token}_conf.nc"))
         for f in tqdm(files):
             dsTemp = xr.open_dataset(f)
             dsTemp['file'] = ('index', [c] * dsTemp.sizes['index'])
             dsTemp = dsTemp.drop_vars(['infP', 'bendLines', 'apexP', 'lineInn', 'lineOut'])
 
-            dsTemp['file_cont'] = c
-            dsTemp['file_num']  = f[-16:-14]
+            parts = Path(f).stem.split("_")
+            dsTemp['file_cont'] = parts[0]
+            dsTemp['file_num']  = parts[1]
 
             dsList.append(dsTemp)
-        
+
+    if len(dsList) == 0:
+        raise FileNotFoundError(
+            f"No Step 5 NetCDF outputs were found in {step6_paths['single_values_dir']} "
+            f"for cross {cross_token} and height factor {hf_token}."
+        )
+
     ds = xr.concat(dsList, dim='index')
-    fName = directory + f'results/single_values/global_{cross}_{hf}_conf.nc'
-    if os.path.exists(fName):
-        os.remove(fName)
-    ds.to_netcdf(fName)
+    output_file = step6_paths["single_values_dir"] / f"global_{cross_token}_{hf_token}_conf.nc"
+    if output_file.exists():
+        output_file.unlink()
+    ds.to_netcdf(output_file)
+    return output_file
 
-def concat_reachAveraged(directory, cross, hf = 2):
+def concat_reachAveraged(directory = None, cross = 50, hf = 2, config_path = None):
+    import geopandas as gpd
 
-    if hf < 10:
-        hf = f'02'
+    step6_paths = _resolve_step6_paths(directory, config_path)
+    cross_token = format_factor_token(cross)
+    hf_token = _format_height_factor(hf)
+    output_files = []
     for c in ['af', 'sa', 'as', 'na', 'eu', 'oc']:
-    # for c in ['af']:
-        print(c, cross, hf)
+        print(c, cross_token, hf_token)
 
-        files = np.sort(glob(directory + f'results/reach_averaged/{c}*{cross}*{hf}*.gpkg'))
-        for i,f in enumerate(files):
-            contN = f[-16:-14]
-            contI = f[-13:-11]
+        files = sorted(step6_paths["reach_averaged_dir"].glob(f"{c}_??_{cross_token}_{hf_token}.gpkg"))
+        if len(files) == 0:
+            continue
+
+        for i, f in enumerate(files):
+            parts = Path(f).stem.split("_")
+            contN = parts[0]
+            contI = parts[1]
             dfT = gpd.read_file(f)
             dfT['file_cont'] = contN
             dfT['file_id']   = contI
@@ -187,12 +280,36 @@ def concat_reachAveraged(directory, cross, hf = 2):
                 dfW = dfT
             else:
                 dfW = pd.concat([dfW, dfT])
-        dfW.to_file(directory + f'results/reach_averaged/{c}_{cross}_{hf}_reachAveraged_conf.gpkg', driver = 'GPKG')
+        output_file = step6_paths["reach_averaged_dir"] / f"{c}_{cross_token}_{hf_token}_reachAveraged_conf.gpkg"
+        if output_file.exists():
+            output_file.unlink()
+        dfW.to_file(output_file, driver = 'GPKG')
+        output_files.append(output_file)
+
+    if len(output_files) == 0:
+        raise FileNotFoundError(
+            f"No Step 5 reach-averaged outputs were found in {step6_paths['reach_averaged_dir']} "
+            f"for cross {cross_token} and height factor {hf_token}."
+        )
+    return output_files
 
 
-def create_apex_val_dataframe(file, directory = '/scratch/6256481/', returnDataframe = False):
+def create_apex_val_dataframe(file, output_path = None, returnDataframe = False, config_path = None):
+    paths = load_project_paths(config_path)
+    paths.ensure_step3_dirs()
+    input_file = Path(file).expanduser()
+    if input_file.is_absolute() is False:
+        input_file = (paths.repo_root / input_file).resolve()
 
-    df = pd.read_csv(file, dtype = {'include_flag': str, 'calculated': str})
+    if output_path is None:
+        output_file = paths.single_values_dir / input_file.name
+    else:
+        output_file = Path(output_path).expanduser()
+        if output_file.is_absolute() is False:
+            output_file = (paths.repo_root / output_file).resolve()
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    df = pd.read_csv(input_file, dtype = {'include_flag': str, 'calculated': str})
 
     dfInc = df[(df['include_flag'] == '0') & (df['calculated'] == '0')]
     dropCols = ['x', 'y', 'swot_obs', 'edit_flag', 'trib_flag', 'wse_var', 'width_var']
@@ -209,7 +326,9 @@ def create_apex_val_dataframe(file, directory = '/scratch/6256481/', returnDataf
     dfInc = str_to_list_comb(dfInc, listCols, listNestCols)
     dfE   = expand_dataframe(dfInc.copy())
     
-    print('Start saving:', file[-12::])
-    dfE.to_csv(directory + f'results/single_values/{file[-12::]}')
+    print('Start saving:', output_file.name)
+    dfE.to_csv(output_file, index=False)
 
     # calc_confinement_values(dfE, file[-12:-4], directory, returnDataframe)
+    if returnDataframe == True:
+        return dfE

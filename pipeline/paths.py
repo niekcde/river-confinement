@@ -10,6 +10,15 @@ from typing import Any
 DEFAULT_CONTINENTS = ("af", "eu", "na", "sa", "as", "oc")
 
 
+def format_factor_token(value: int | float) -> str:
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    token = f"{value}"
+    if value < 10:
+        token = f"0{token}"
+    return token
+
+
 def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
@@ -83,8 +92,23 @@ class ProjectPaths:
         return self.results_root / "all"
 
     @property
+    def orthogonals_dir(self) -> Path:
+        return self.results_root / "orthogonals"
+
+    @property
+    def profiles_dir(self) -> Path:
+        return self.results_root / "profiles"
+
+    @property
     def single_values_dir(self) -> Path:
         return self.results_root / "single_values"
+
+    @property
+    def confinement_factor_file(self) -> Path:
+        return self.confinement_factor_file_for()
+
+    def confinement_factor_file_for(self, conf_factor: int | float = 50) -> Path:
+        return self.reference_tables_dir / f"confinement_factor_{format_factor_token(conf_factor)}.csv"
 
     @property
     def reach_averaged_dir(self) -> Path:
@@ -116,9 +140,36 @@ class ProjectPaths:
     def ensure_step2_dirs(self) -> None:
         for path in (
             self.results_root,
+            self.orthogonals_dir,
+            self.profiles_dir,
             self.all_dir,
             self.centerline_dir,
             self.cycles_dir,
+            self.input_created_root,
+            self.input_created_dem_dir,
+        ):
+            path.mkdir(parents=True, exist_ok=True)
+
+    def ensure_step3_dirs(self) -> None:
+        for path in (
+            self.results_root,
+            self.all_dir,
+            self.single_values_dir,
+        ):
+            path.mkdir(parents=True, exist_ok=True)
+
+    def ensure_step4_dirs(self) -> None:
+        for path in (
+            self.results_root,
+            self.reference_tables_dir,
+        ):
+            path.mkdir(parents=True, exist_ok=True)
+
+    def ensure_step5_dirs(self) -> None:
+        for path in (
+            self.results_root,
+            self.single_values_dir,
+            self.reach_averaged_dir,
             self.input_created_root,
             self.input_created_dem_dir,
         ):

@@ -8,16 +8,14 @@ if __package__ in (None, ""):
 ################################################
 # Import modules
 ################################################
-import pandas as pd
 import numpy as np
-import os
 from glob import glob
-from multiprocessing import Pool
 from datetime import datetime as dt
 
-from .support import confinement_factor_single_values
-from .run_confinement_values import calc_confinement_values, concat_nc_conf_files,\
-      concat_reachAveraged, create_apex_val_dataframe
+from .build_step3_single_values import run_step3_single_values
+from .build_step4_confinement_factor import build_step4_confinement_factor
+from .build_step5_confinement_outputs import run_step5_confinement_outputs
+from .build_step6_aggregates import run_step6_aggregates
 
 ################################################
 # Settings
@@ -38,35 +36,26 @@ print(f'start Code: {dt1}')
 ################################################
 if createNewSingleVal == True:
     print('Start transform results in single row values')
-    files = np.sort(glob(directory + f'results/all/??_??_{crossFactor}.csv'))
-    removeFiles = glob(directory + f'results/single_values/??_??_{crossFactor}.csv')
-    for rmf in removeFiles:
-        os.remove(rmf)
-
-    if __name__ == '__main__':
-        with Pool(10) as p:
-            p.imap(create_apex_val_dataframe, files)
-            p.close()
-            p.join()
+    step3_outputs = run_step3_single_values(
+        workers=10,
+        conf_factor=crossFactor,
+    )
     
     dt2 = dt.now()
     print(f'Open_to_single_apex Finished: {dt2-dt1}')
-    allResultFiles = np.sort(glob(directory + f'results/single_values/??_??_{crossFactor}.csv'))
+    allResultFiles = np.array([str(path) for path in step3_outputs])
 
 ################################################
 # get confinement factor values
 ################################################
 if createNewFactor == True:
     print('Start calc confinement factor')
-    for i, f in enumerate(allResultFiles):
-        dfTemp = pd.read_csv(f, dtype = {'include_flag':str, 'calculated':str})
-        if i == 0:
-            dfA = dfTemp
-        else:
-            dfA = pd.concat([dfA, dfTemp])
-
-    dfCF = confinement_factor_single_values(dfA, 'bendWidths', conFactor[0], conFactor[1])
-    dfCF.to_csv(directory + 'results/confinement_factor.csv')
+    build_step4_confinement_factor(
+        input_files=allResultFiles,
+        output_path=directory + f'results/reference_tables/confinement_factor_{crossFactor}.csv',
+        y1=conFactor[0],
+        y2=conFactor[1],
+    )
     
     dt3 = dt.now()
     dtm = dt2 if createNewSingleVal == True else dt1
@@ -76,32 +65,20 @@ if createNewFactor == True:
 # get confinement values
 ################################################
 print('Start calc confinement values')
-def run(input):
-    file = input[0]
-    print(f'run_confinement_values_shell - run: {file[-12:-4]}')
-    df = pd.read_csv(file)
-    calc_confinement_values(df, file[-12:-4], directory, False, True, crossFactor, input[1])
-
-
-# dfFiles = pd.read_csv(directory + 'results/reference_tables/file_sorting.csv', index_col = 0)
-# sorting = list(dfFiles.sort_values('file')['size'].argsort().values[::-1])
-# allResultFiles = np.array(allResultFiles)
-# allResultFiles = allResultFiles[sorting]
-
-# print(len(allResultFiles))
-# run([allResultFiles[-1], 2])
-
-
 for hf in heightFactor:
-    multiInput = [[arf, hf] for arf in allResultFiles]
-    if __name__ == '__main__':
-        with Pool(10) as p:
-            p.imap(run, multiInput)
-            p.close()
-            p.join()
+    run_step5_confinement_outputs(
+        input_files=allResultFiles,
+        workers=10,
+        conf_factor=crossFactor,
+        height_factor=hf,
+        directory=directory,
+    )
 
-    concat_nc_conf_files(directory, crossFactor, hf)
-    concat_reachAveraged(directory, crossFactor, hf)
+    run_step6_aggregates(
+        cross_factor=crossFactor,
+        height_factor=hf,
+        directory=directory,
+    )
 
     print(f'run confinement heightfactor {hf} finished')
 print(f'run confinement finished Finished: {dt.now() - dt1}')

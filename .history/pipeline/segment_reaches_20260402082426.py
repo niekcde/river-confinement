@@ -25,6 +25,9 @@ def _extract_segmented_parts(path: Path) -> tuple[str, str]:
 
 
 def _discover_input_pair(paths, continent: str) -> tuple[Path, Path]:
+    print('debugging')
+    print(paths.swot_vector_dir, continent)
+    print(paths.swot_vector_dir.glob(f"{continent}*reaches*17*gpkg"))
     vector_files = sorted(paths.swot_vector_dir.glob(f"{continent}*reaches*17*gpkg"))
     node_files = sorted(paths.swot_nodes_dir.glob(f"{continent}*nodes*17*gpkg"))
 

@@ -45,54 +45,105 @@ Follow-up direction:
 - Keep the current one-file-per-continent assumption for now
 - Revisit this only when the later stages are refactored onto the same path/file naming system
 
-## 3. Step 3 has duplicated entrypoints
+## 16. Step 2 now writes orthogonals and sampled profiles, but orchestration is still bundled in `pipeline/main.py`
 
-The Step 3 single-bend expansion is implemented once in `create_apex_val_dataframe(...)`, but it is invoked by both `pipeline/open_to_single_apex.py` and the `createNewSingleVal == True` block in `pipeline/run_confinement_values_shell.py`.
+Status update:
+- Initial refactor implemented: `pipeline/get_orthogonals.py` now separates `build_orthogonal_lines(...)` from `sample_orthogonal_profiles(...)`
+- `pipeline/main.py` now calls those as distinct substeps inside Step 2
+- Step 2 now writes `results/orthogonals/*.gpkg` and `results/profiles/*.csv` before assembling `results/all/*.csv`
+- A dedicated geometry-only entrypoint now exists in `pipeline/build_step2_orthogonals.py`
+- The DEM-sampling stage now also exists as its own callable module in `pipeline/sample_step2_profiles.py`
+- The raster-resize loop in the DEM sampling path was also fixed so it now actually increases the requested raster size when expansion is needed
 
-Impact:
-- There are two current ways to run the same pipeline stage
-- Pipeline documentation and execution order are harder to keep consistent
-
-Follow-up direction:
-- Keep one canonical Step 3 entrypoint and make the other call it or remove the duplication later
-
-## 4. Downstream output directories are not created in active setup code
-
-Active downstream code writes to `results/single_values/` and `results/reach_averaged/`, but the visible setup code in `pipeline/main.py` only creates:
-- `results/`
-- `results/new_segments/`
-- `results/new_segments/node/`
-- `results/new_segments/vector/`
-- `results/all/`
-- `results/centerline/`
-- `results/cycles/`
-
-Impact:
-- Step 3 and later stages may fail on a clean filesystem if those output directories do not already exist
+Impact that remains:
+- `pipeline/main.py` still owns geometry creation, DEM sampling, and final CSV assembly in one orchestration path
+- The current orchestration still runs one file at a time rather than batching DEM work across saved orthogonal intermediates
 
 Follow-up direction:
-- Add explicit directory creation for downstream outputs in the active pipeline setup path
+- Keep `pipeline/sample_step2_profiles.py` as the DEM stage
+- Add a thin orchestration layer that can chain geometry -> profiles -> final `results/all/*.csv` without forcing them to live in one large script
 
-## 5. Step 4 is only embedded in `pipeline/run_confinement_values_shell.py`
+## 17. Step 2 still serializes sampled profile arrays into very large CSV string columns
 
-The confinement-factor lookup table is produced by the `createNewFactor == True` block in `pipeline/run_confinement_values_shell.py`. I do not see a separate dedicated entrypoint for this stage.
+Status update:
+- Step 3 now has a parser that can read the current nested profile encoding from `results/all/*.csv`
+- That parser had to be hardened because the saved profile columns are not clean JSON; they currently include numpy-style scalar strings such as `np.float32...`
 
-Impact:
-- Step 4 is harder to run independently and document cleanly
-- The same script mixes Step 3, Step 4, and later confinement-value stages
+Impact that remains:
+- Step 2 outputs in `results/profiles/*.csv` and `results/all/*.csv` are very large
+- Step 3 remains slower and more brittle than it should be because it has to deserialize large nested list strings back into Python objects
+- The current storage format makes debugging and downstream reuse harder than a structured format like Parquet or NetCDF-backed intermediates
+- Simple text-line tools such as `wc -l` become misleading on downstream CSVs because nested list columns can contain embedded newlines inside quoted cells
 
 Follow-up direction:
-- Split the lookup-table build into its own explicit stage entrypoint later
+- Keep the current parser fix so the active pipeline still runs
+- Revisit the Step 2 -> Step 3 handoff later and replace the nested-list CSV storage with a more stable intermediate format
+
+## 18. Step 3 may be removable if Step 2 writes a bend-level structured intermediate directly
+
+Status update:
+- Step 3 currently exists mainly to transform Step 2 reach-level CSV outputs with nested list columns into one row per bend
+
+Impact that remains:
+- The pipeline carries an extra expansion stage that is expensive and tightly coupled to the current nested-list CSV format
+
+Follow-up direction:
+- Revisit the Step 2 output design later
+- If Step 2 writes bend-level structured outputs directly, for example Parquet files with one row per bend, Step 3 could likely be removed or reduced to a thin compatibility layer
+
+## 3. Step 3 now has a canonical entrypoint, but compatibility wrappers still remain
+
+Status update:
+- The canonical Step 3 entrypoint is now `pipeline/build_step3_single_values.py`
+- `pipeline/open_to_single_apex.py` now delegates to that canonical CLI
+- The Step 3 block in `pipeline/run_confinement_values_shell.py` now also calls the same helper instead of keeping its own file loop
+
+Impact that remains:
+- The compatibility wrapper file `pipeline/open_to_single_apex.py` still exists
+- `pipeline/run_confinement_values_shell.py` still mixes Step 3 with later stages even though it no longer owns the Step 3 logic
+
+Follow-up direction:
+- Keep `pipeline/build_step3_single_values.py` as the canonical Step 3 path
+- Remove or retire compatibility wrappers later when the downstream shell stages are split out
+
+## 4. Later-stage output directories are still not created consistently outside the new Step 3 path
+
+Status update:
+- Step 3 now explicitly creates `results/single_values/` via `pipeline/build_step3_single_values.py` and `pipeline/paths.py`
+- Step 5 now explicitly creates `results/reach_averaged/` and the Step 5 `results/single_values/*_conf.*` outputs via `pipeline/build_step5_confinement_outputs.py` and `pipeline/paths.py`
+
+Impact that remains:
+- Later stages still write to directories such as `results/single_smoothed/` without one consistent setup path across the active pipeline
+
+Follow-up direction:
+- Continue the same path/setup cleanup pattern for Step 6 and later stages
+
+## 5. Step 4 now has a canonical entrypoint, but later stages still consume it through older directory-based code
+
+Status update:
+- The canonical Step 4 entrypoint is now `pipeline/build_step4_confinement_factor.py`
+- The Step 4 block in `pipeline/run_confinement_values_shell.py` now calls that helper instead of keeping its own concatenation logic
+
+Impact that remains:
+- The shell script still mixes Step 4 with later stages even though it no longer owns the Step 4 logic
+- The broader final workflow is still spread across multiple stage entrypoints plus the older shell wrapper
+
+Follow-up direction:
+- Keep `pipeline/build_step4_confinement_factor.py` as the canonical Step 4 path
+- Continue splitting Step 5 and later stages into their own explicit entrypoints and orchestration layers
 
 ## 6. Step 4 is not robust to an empty Step 3 result set
 
-In `pipeline/run_confinement_values_shell.py`, `dfA` is only assigned inside the loop over `allResultFiles`. If no `results/single_values/??_??_50.csv` files exist, the later call to `confinement_factor_single_values(dfA, ...)` will fail because `dfA` was never defined.
+Status update:
+- The canonical Step 4 helper now checks for missing inputs explicitly
+- When no Step 3 files are available, it raises a clear `FileNotFoundError` instead of failing later with an undefined dataframe
 
-Impact:
-- Step 4 can crash instead of failing with a clear prerequisite error when Step 3 outputs are missing
+Impact that remains:
+- No specific empty-input bug remains in the canonical Step 4 path
+- Broader downstream robustness work is still needed in later stages
 
 Follow-up direction:
-- Add an explicit empty-input check before concatenation and fail with a clear message
+- Keep the explicit prerequisite checks as later stages are split out
 
 ## 7. Reach-averaged geometry reconstruction in Step 5 appears broken
 
@@ -120,29 +171,31 @@ Remaining follow-up:
 Impact that remains:
 - The VRT is no longer undeclared, but the rest of the pipeline has not yet been fully migrated to one consistent path/config model
 
-## 9. Step 6 reach-averaged aggregation uses the wrong height-factor string
+## 9. Step 6 height-factor formatting is fixed in the canonical aggregation path
 
-In `pipeline/run_confinement_values.py`, `concat_reachAveraged(directory, cross, hf)` contains:
-- `if hf < 10: hf = f'02'`
+Status update:
+- `concat_reachAveraged(...)` now uses the same height-factor formatting helper as Step 5
+- The canonical Step 6 entrypoint is now `pipeline/build_step6_aggregates.py`
 
-That hard-codes every height factor below 10 to `02` instead of formatting the actual value.
-
-Impact:
-- Aggregated reach-averaged outputs for `hf = 0.5, 1, 1.5, 3, 4, 6, 8` will look for or write the wrong filenames
-- Step 6 can silently aggregate the wrong subset of files
-
-Follow-up direction:
-- Format the actual `hf` value instead of replacing all sub-10 values with `02`
-
-## 10. Step 6 aggregation is not robust to empty file lists
-
-`concat_nc_conf_files(...)` and `concat_reachAveraged(...)` assume matching files exist. If none are found, they proceed to `xr.concat(dsList, ...)` or use `dfW` without guaranteeing it was assigned.
-
-Impact:
-- Step 6 can crash with unclear errors when any expected per-file Step 5 outputs are missing
+Impact that remains:
+- No specific height-factor formatting bug remains in the canonical Step 6 path
+- The older shell wrapper still exists, but it now calls the canonical Step 6 helper
 
 Follow-up direction:
-- Add explicit empty-input checks before concatenation and fail with a clear message
+- Keep the shared height-factor formatting logic aligned across Steps 5 and 6
+
+## 10. Step 6 empty-input handling is fixed in the canonical aggregation path
+
+Status update:
+- `concat_nc_conf_files(...)` and `concat_reachAveraged(...)` now check for missing Step 5 inputs explicitly
+- The canonical Step 6 path now raises clear `FileNotFoundError` messages when no matching per-file outputs exist for the requested height factor
+
+Impact that remains:
+- No specific empty-input bug remains in the canonical Step 6 path
+- Broader later-stage robustness work is still needed in Step 7 and beyond
+
+Follow-up direction:
+- Keep the explicit prerequisite checks as the remaining downstream stages are split out
 
 ## 11. Step 7 only processes height factor `02`
 
