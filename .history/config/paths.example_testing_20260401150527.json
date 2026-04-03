@@ -1,8 +1,0 @@
-{
-  "data_root": "./data",
-  "results_root": "./results",
-  "swot_vector_dir": "/Volumes/PhD/SWORD/v17/GPKG",
-  "swot_nodes_dir": "/Volumes/PhD/SWORD/v17/GPKG",
-  "input_created_root": "./input_created",
-  "fabdem_vrt": "./input_created/FAB_dem_vrt.vrt"
-}
