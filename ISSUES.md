@@ -2,20 +2,19 @@
 
 ## 1. Hard-coded base paths
 
-Current active scripts hard-code `directory = '/scratch/6256481/'` instead of taking a repo-relative path, config value, or CLI argument.
+Status update:
+- The canonical Steps 1 through 8 now run through `pipeline/paths.py` and `config/paths.local.json`
+- `pipeline/run_confinement_values_shell.py`, `pipeline/select_raster.py`, and the active path-setup cells in `pipeline/final_results.ipynb` no longer hard-code `/scratch/6256481/` or `/Volumes/...`
 
-Impact:
-- The pipeline is not portable as checked into this repository
-- Running code from this session cannot assume that `/scratch/6256481/` exists
+Impact that remains:
+- The main pipeline is now portable through the shared path/config layer
+- Some older helper functions still carry compatibility-style `directory` arguments or legacy path assumptions outside the canonical stage flow
+- A few notebook comments still mention old absolute example paths
 
-Examples in current active code:
-- `pipeline/main.py`
-- `pipeline/open_to_single_apex.py`
-- `pipeline/run_confinement_values_shell.py`
-- `pipeline/run_confinement_values.py` default argument
-- `pipeline/select_raster.py`
-- `pipeline/spatial_smoothing.py`
-- `pipeline/clustering_confinement.py`
+Examples that still need later cleanup:
+- `pipeline/dem.py` MERIT-specific helper paths
+- older compatibility-oriented helpers inside `pipeline/run_confinement_values.py`
+- stale commented path examples in `pipeline/final_results.ipynb`
 
 ## 2. Step 1 entrypoint separation
 
@@ -24,10 +23,11 @@ Status update:
 - Step 1 paths are now loaded through `pipeline/paths.py` and `config/paths.local.json`
 
 Remaining follow-up:
-- Move the later stages onto the same config-driven path system so Step 1 and Step 2+ use one consistent project layout
+- Keep the canonical stage entrypoints on the shared path system and continue pruning older helper/compatibility code around them
 
 Impact that remains:
-- Step 1 is now cleanly separated, but the rest of the pipeline still mixes the old hard-coded layout with the new Step 1 path configuration
+- Step 1 is now cleanly separated and the canonical later stages now use the same project layout
+- Remaining work is mostly around older helper modules and convenience wrappers, not the main audited pipeline path
 
 ## 15. Step 1 still assumes one reach file and one node file per continent
 
@@ -111,26 +111,30 @@ Follow-up direction:
 Status update:
 - Step 3 now explicitly creates `results/single_values/` via `pipeline/build_step3_single_values.py` and `pipeline/paths.py`
 - Step 5 now explicitly creates `results/reach_averaged/` and the Step 5 `results/single_values/*_conf.*` outputs via `pipeline/build_step5_confinement_outputs.py` and `pipeline/paths.py`
+- Step 7 now explicitly creates `results/single_smoothed/` via `pipeline/spatial_smoothing.py` and `pipeline/paths.py`
+- Step 8 now writes its score tables through the shared results root in `pipeline/clustering_confinement.py`
 
 Impact that remains:
-- Later stages still write to directories such as `results/single_smoothed/` without one consistent setup path across the active pipeline
+- No specific later-stage output-directory bug remains in the canonical Steps 3 through 8 path
+- The same cleanup pattern is still needed in older non-canonical helpers and notebooks
 
 Follow-up direction:
-- Continue the same path/setup cleanup pattern for Step 6 and later stages
+- Keep using `pipeline/paths.py` as older helper scripts are either cleaned or retired
 
-## 5. Step 4 now has a canonical entrypoint, but later stages still consume it through older directory-based code
+## 5. Step 4 now has a canonical entrypoint, but the multi-stage shell wrapper still exists as compatibility code
 
 Status update:
 - The canonical Step 4 entrypoint is now `pipeline/build_step4_confinement_factor.py`
 - The Step 4 block in `pipeline/run_confinement_values_shell.py` now calls that helper instead of keeping its own concatenation logic
+- `pipeline/run_confinement_values_shell.py` is now path-aware and delegates to the canonical Step 3 to Step 6 entrypoints
 
 Impact that remains:
-- The shell script still mixes Step 4 with later stages even though it no longer owns the Step 4 logic
-- The broader final workflow is still spread across multiple stage entrypoints plus the older shell wrapper
+- The shell script still mixes several later stages in one compatibility wrapper
+- The broader final workflow is still spread across multiple explicit stage entrypoints plus that wrapper
 
 Follow-up direction:
 - Keep `pipeline/build_step4_confinement_factor.py` as the canonical Step 4 path
-- Continue splitting Step 5 and later stages into their own explicit entrypoints and orchestration layers
+- Retire or minimize the compatibility wrapper later once a preferred high-level orchestration path is settled
 
 ## 6. Step 4 is not robust to an empty Step 3 result set
 
@@ -197,36 +201,39 @@ Impact that remains:
 Follow-up direction:
 - Keep the explicit prerequisite checks as the remaining downstream stages are split out
 
-## 11. Step 7 only processes height factor `02`
+## 11. Step 7 height-factor handling is fixed in the canonical smoothing path
 
-In `pipeline/spatial_smoothing.py`, the active code hard-codes:
-- `hfList = [2]`
+Status update:
+- The canonical Step 7 entrypoint is now `pipeline/build_step7_spatial_smoothing.py`
+- The smoothing stage now accepts `--height-factor` instead of hard-coding `hfList = [2]`
 
-Step 5 and Step 6 produce outputs for many height factors, but Step 7 only smooths one of them.
-
-Impact:
-- The main smoothed-results pipeline is incomplete relative to the earlier confinement-output stages
-- Final clustering and final-results workflows are effectively pinned to one smoothed height factor
-
-Follow-up direction:
-- Either document `02` as the only supported smoothing height or loop over the actual intended set of height factors
-
-## 12. Step 7 writes to `results/single_smoothed/` without visible directory creation
-
-`pipeline/spatial_smoothing.py` writes smoothed NetCDF and pickle files to `results/single_smoothed/`, but I do not see active setup code that creates that directory.
-
-Impact:
-- Step 7 may fail on a clean filesystem
+Impact that remains:
+- No specific hard-coded `02` bug remains in the canonical Step 7 path
+- There is still no higher-level workflow wrapper that automatically runs the full intended set of smoothed height factors for downstream analysis
 
 Follow-up direction:
-- Add explicit directory creation before the smoothing outputs are written
+- Decide which height factors the final workflow actually requires, then orchestrate those explicitly
 
-## 13. Step 8 expects smoothed files for heights `02`, `03`, and `04`, but Step 7 only creates `02`
+## 12. Step 7 output-directory creation is fixed in the canonical smoothing path
 
-`pipeline/clustering_confinement.py` loops over `ch in [2,3,4]` and opens:
-- `results/single_smoothed/global_50_0{ch}_smoothed.nc`
+Status update:
+- The canonical Step 7 path now creates `results/single_smoothed/` before writing smoothed NetCDF and pickle outputs
 
-But the active Step 7 code only produces `global_50_02_smoothed.nc`.
+Impact that remains:
+- No specific clean-filesystem directory bug remains in the canonical Step 7 path
+- The older downstream scripts still need the same path/setup review pattern
+
+Follow-up direction:
+- Keep using `pipeline/paths.py` for later-stage output setup instead of ad hoc directory strings
+
+## 13. Step 8 expects smoothed files for heights `02`, `03`, and `04`, but there is no matching multi-height Step 7 orchestration yet
+
+Status update:
+- The canonical Step 8 entrypoint is now `pipeline/build_step8_confinement_clustering.py`
+- The clustering stage now accepts `--height-factors` instead of hard-coding `ch in [2,3,4]`
+- The canonical Step 8 path reads `results/single_smoothed/global_50_{hf}_smoothed.nc` through the shared path setup
+
+The canonical Step 7 path can now smooth any requested height factor, and the canonical Step 8 path can now cluster any requested height factor, but I do not see orchestration in the current repo that automatically produces `02`, `03`, and `04` together before clustering runs.
 
 Impact:
 - Step 8 cannot run successfully for `03` and `04` from the currently visible upstream code path
@@ -235,21 +242,18 @@ Impact:
 Follow-up direction:
 - Align the smoothing stage and clustering stage to the same set of height factors
 
-## 14. Step 8 has an obvious runtime bug in the KMeans section
+## 14. Step 8 KMeans runtime bug is fixed in the canonical clustering path
 
-In `pipeline/clustering_confinement.py`, after:
-- `S = KmeansTune(dfCluster, clusterCols, clusters, sampleSize, random_states)`
+Status update:
+- The canonical Step 8 path now writes KMeans score tables directly from `KmeansTune(...)`
+- The undefined `comb` variable has been removed from the canonical clustering code
 
-the code does:
-- `S = [s + comb for s in S]`
-
-but `comb` is not defined in that scope.
-
-Impact:
-- The script is likely to fail before later clustering outputs are written
+Impact that remains:
+- No specific `comb` runtime bug remains in the canonical Step 8 path
+- Broader clustering-workflow cleanup is still needed where older notebooks and scripts expect the previous hard-coded paths
 
 Follow-up direction:
-- Remove the undefined variable or replace it with the intended metadata payload
+- Keep the canonical Step 8 path as the source of truth and update any downstream notebooks to its current paths and outputs
 
 
 # end of issues

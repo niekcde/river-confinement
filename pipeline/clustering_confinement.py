@@ -1,4 +1,5 @@
-
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 if __package__ in (None, ""):
     import os
     import sys
@@ -6,406 +7,303 @@ if __package__ in (None, ""):
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     __package__ = "pipeline"
 
-# import packages
-import xarray as xr
-import geopandas as gpd
+import argparse
+import itertools
+
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-
-from datetime import datetime as dt
-from glob import glob
-from tqdm import tqdm
-
-# import partial packages
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score, davies_bouldin_score
-from sklearn.utils import resample
-from sklearn.model_selection import train_test_split, ParameterGrid
+import xarray as xr
 from sklearn.decomposition import PCA
-from sklearn.mixture import GaussianMixture, BayesianGaussianMixture
-# from sklearn.mixture import 
-
-from functools import reduce, partial
-import itertools
-from multiprocessing import Pool
-
-from joblib import Parallel, delayed
 
 from .calc_functions import scale
-
-directory = '/scratch/6256481/'
-
-from .clustering import KmeansTune, GMM_tune#, HDBSCAN_tune
-
-###############################################################
-# Formulas
-###############################################################
-
-def open_dataset_confinement_clustering(ch):
-    f = directory + f'results/single_smoothed/global_50_0{ch}_smoothed.nc'
-    ds = xr.open_dataset(f)
-    df = ds.to_dataframe().reset_index()
-    return df
-
-###############################################################
-# Tuning for different Conf heights
-###############################################################
-if __name__ == '__main__':
-    clusters      = [3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
-    sampleSize    = 40000
-    random_states = [20,43,50]
-    for ch in [2,3,4]:
-        print(ch)
-
-        print()
-        print()
-        print()
-        print()
-        print(f'Confinement Height: {ch}')
-        print()
-        scoresKmeans, scoresGMM, scoresHDB = [], [], []
-
-        df = open_dataset_confinement_clustering(ch)
-        ###############################################################
-        # Select columns
-        ###############################################################
-        slopeCols    = ['slope_out_normalized', 'slope_right_normalized', 'slope_left_normalized', 'slope_inn_normalized']
-        slopeSCols   = ['slope_out_normalized_smooth', 'slope_right_normalized_smooth', 'slope_left_normalized_smooth', 'slope_inn_normalized_smooth']
-        slopeSTCols  = ['slope_out_normalized_smoothSTD', 'slope_right_normalized_smoothSTD', 'slope_left_normalized_smoothSTD', 'slope_inn_normalized_smoothSTD']
-
-        ###############################################################
-        # Scale selected columns
-        ###############################################################
-        # X_scaledO   = scale(df, slopeCols)
-        # X_scaledS   = scale(df, slopeSCols)
-        # X_scaledST  = scale(df, slopeSCols + slopeSTCols)
-        X_scaledSO  = scale(df, slopeCols + slopeSCols)
-        # X_scaledSOT = scale(df, slopeCols + slopeSCols + slopeSTCols)
-        ###############################################################
-        # PCA
-        ###############################################################
-        pca = PCA(n_components=8)  # e.g., reduce to 10 components
-        X_pca = pca.fit_transform(X_scaledSO)
-        X_pca = X_pca[:,:3]
-
-        # dfCluster = df[slopeCols + slopeSCols + slopeSTCols]
-        dfCluster = df.copy().dropna(subset = slopeCols + slopeSCols)
-        dfCluster[['PCA1', 'PCA2', 'PCA3']] = X_pca[:, :3]
-        clusterCols = dfCluster.columns[dfCluster.columns.str.startswith('PCA')]
-
-        # for alg in ['tied', 'full', 'diag']:
-        #     # test for number of clusters
-        #     model = BayesianGaussianMixture(
-        #         n_components=40,  # Upper bound
-        #         covariance_type=alg,
-        #         weight_concentration_prior_type='dirichlet_process',
-        #         weight_concentration_prior=1e-2,
-        #         max_iter=1000,
-        #         random_state=42
-        #         )
-
-        #     print(model.fit(dfCluster[clusterCols]))
-        #     # Weights represent the proportion of samples in each component
-        #     active_components = np.sum(model.weights_ > 1e-2)
-        #     print(f"Estimated number of clusters: {active_components}")
-        #     print()
-        # print()
-        # print()
-
-        ###############################################################
-        # Kmeans
-        # ###############################################################
-        print('start Kmeans')           
-        S = KmeansTune(dfCluster, clusterCols, clusters, sampleSize, random_states)
-        S = [s +comb for s in S]
-        scoresKmeans.extend(S)
-        # dfKMEANSScores = pd.DataFrame(scores, columns = ['clusters', 'Silhouette', 'DaviesB'])
-        # dfKMEANSScores.to_csv(directory + f'results/KmeanScores_confinement_0{ch}.csv')
-
-
-
-
-        ###############################################################
-        # PCA GMM
-        ###############################################################
-        # print('GMM')
-        # def GMM_tune(X, n_components, n_init, covType, mi, ip):
-
-        #     gmm = GaussianMixture(n_components=n_components, 
-        #                         covariance_type=covType,
-        #                         max_iter = mi,
-        #                         init_params=ip,
-        #                         random_state=42, n_init = n_init)
-        #     gmm.fit(X)
-
-        #     labels = gmm.predict(X)
-        #     # 4. Calculate BIC score (lower is better)
-        #     bic = gmm.bic(X)
-        #     aic_score = gmm.aic(X)
-            
-        #     s,d = [], []
-        #     for rs in random_states:
-        #         Xs, Ls = stratified_sample(X, labels, sampleSize, rs)
-        #         # 5. Calculate Silhouette score (range -1 to 1, higher is better)
-        #         s.append(silhouette_score(Xs, Ls))
-        #         d.append(davies_bouldin_score(Xs, Ls))
-        #     sil_score = np.mean(s)
-        #     dav_score = np.mean(d)
-        #     # print(f"BIC score: {bic:.2f}")
-        #     # print(f"AIC: {aic_score:.3f}")
-        #     print(f"Silhouette Score: {sil_score:.3f}")
-        #     print(f"Davies bouldin Score: {dav_score:.3f}")
-        #     return bic, aic_score, sil_score, dav_score
-
-
-
-        scores = []
-        for init_p in ['k-means++', 'kmeans']:
-            for max_iter in [200, 500]:
-                for covType in ['tied', 'diag']:
-                    for init in [5, 15, 25, 50]:
-                        for n in clusters:
-                        
-                            b, a, s, d = GMM_tune(dfCluster[clusterCols], n, init, covType, max_iter, init_p)
-                            scores.append([max_iter,covType, init, init_p, n,b,a,s,d])
-                            # print(max_iter,covType, init, n)
-                            # time.sleep(2)
-
-        dfGMMScores = pd.DataFrame(scores, columns = ['max_iter', 'cov_type', 'init', 'init_p', 'clusters', 'BIC', 'AIC', 'Silhouette', 'DaviesB'])
-        dfGMMScores.to_csv(directory + f'results/GMMSCORES_confinement_0{ch}.csv')
-        print('Done GMM')
-
-
-        print('GMM')
-        init_type = ['k-means++', 'kmeans']
-        max_iter  = [200,500]
-        covType   = ['diag', 'tied']
-        init      = [5, 15, 25, 50]
-        runs = list(itertools.product(*[max_iter, covType, init, init_type, clusters]))
-
-        if __name__ == '__main__':
-            print('__main__')
-            func = partial(GMM_tune, X=dfCluster[clusterCols])  # bind df once
-            with Pool(10) as pl:
-                res = pl.imap(func, runs)
-                pl.close()
-                pl.join()
-
-        dfGMMScores = pd.DataFrame(list(res), columns = [ 'init_type', 'max_iter', 'covType', 'init', 'cluster','bic', 'aic_score', 'sil_score', 'dav_score'])
-        dfGMMScores.to_csv(directory + f'results/GMMSCORES_confinement_0{ch}.csv')
-        print('Done GMM')
-
-
-        ###############################################################
-        # PCA HDBSCAN
-        ###############################################################
-        # print('HBDSCAN')
-        # dt1 = dt.now()
-
-        # print('chebyshev')
-        # HDBSCAN_tune_PCA(dfCluster[clusterCols], 'chebyshev', 'best')
-
-        # print('canberra')
-        # HDBSCAN_tune_PCA(dfCluster[clusterCols], 'canberra', 'best')
-
-        # print('minkowski 1')
-        # HDBSCAN_tune_PCA(dfCluster[clusterCols], 'minkowski', 'best', 1)
-        # print('minkowski 2')
-        # HDBSCAN_tune_PCA(dfCluster[clusterCols], 'minkowski', 'best', 2)
-        # print('minkowski 3')
-        # HDBSCAN_tune_PCA(dfCluster[clusterCols], 'minkowski', 'best', 3)
-
-        # print('euclidean')
-        # HDBSCAN_tune_PCA(dfCluster[clusterCols], 'euclidean', 'best')
-        # dt4 = dt.now()
-
-        # print('manhattan')
-        # HDBSCAN_tune_PCA(dfCluster[clusterCols], 'manhattan', 'best')
-
-
-        # all need algorithm generic and this causes memory issues
-        # Cosine creates pairwise datamatrix and this becomes to large
-        # correlation creates pairwise datamatrix and this becomes to large
-        # seuclidean
-        # mahalanobis
-        # callable
-
-        # haversine --> needs geographic
-
-
-    ##########################################################################################
-    ##########################################################################################
-    # Merged clustering CH 2-3-4
-    ##########################################################################################
-    ##########################################################################################
-    # print('Merged Confinement height approach')
-    # def scale(df, scaleCols):
-    #     X = df[scaleCols]
-    #     # === Standardize features ===
-    #     scaler = StandardScaler()
-    #     X_scaled = scaler.fit_transform(X)
-    #     return X_scaled
-
-    # def open_dataset(CH):
-    #     # Open netcdf file
-    #     f = directory + f'results/single_smoothed/global_50_0{CH}_smoothed.nc'
-    #     ds = xr.open_dataset(f)
-
-    #     # transform to dataframe
-    #     df = ds.to_dataframe().reset_index()
-
-    #     # define clustering columns
-    #     slopeCols   = ['slope_out_normalized', 'slope_right_normalized', 'slope_left_normalized', 'slope_inn_normalized']
-    #     slopeSCols  = ['slope_out_normalized_smooth', 'slope_right_normalized_smooth', 'slope_left_normalized_smooth', 'slope_inn_normalized_smooth']
-
-    #     # drop rows with na values in any of the clustercolumns
-    #     dfCluster = df.copy().dropna(subset = slopeCols + slopeSCols )
-    #     dfCluster = dfCluster.rename(columns = {col: col + f'_0{CH}' for col in slopeCols + slopeSCols})
-
-    #     return dfCluster
-
-    # def apply_GMM(df, cols, numClusters, CH):
-
-    #     # GMM settings
-    #     max_iter = 100
-    #     n_init = 5
-    #     covariance_type = 'tied'
-    #     # select model and fit data
-    #     gmm = GaussianMixture(n_components=numClusters, covariance_type=covariance_type, random_state=42, n_init = n_init, max_iter = max_iter)
-    #     gmm.fit(df[cols])
-    #     print('done Fitting')
-    #     labelsHard = gmm.predict(df[cols])
-    #     labelsSoft = gmm.predict_proba(df[cols])
-
-    #     df[f'GMM_pca_{numClusters}_hard_0{CH}']=  labelsHard
-
-    #     for i in range(numClusters):
-    #         df[f'GMM_pca_{numClusters}_{i}_soft_0{CH}']=  labelsSoft[:,i]
-    #     return df
-
-    # dfL = []
-    # for ch in [2,3,4]:
-    #     df = open_dataset(ch)
-    #     dfL.append(df)
-
-    # for i, ch in enumerate([2,3,4]):
-    #         cols = ['bendID', 'file', 
-    #                 f'slope_out_normalized_0{ch}'  , f'slope_inn_normalized_0{ch}'  , 
-    #                 f'slope_left_normalized_0{ch}' , f'slope_right_normalized_0{ch}',
-    #                 f'slope_out_normalized_smooth_0{ch}'  , f'slope_inn_normalized_smooth_0{ch}'  , 
-    #                 f'slope_left_normalized_smooth_0{ch}' , f'slope_right_normalized_smooth_0{ch}']
-
-    #         dfL[i] = dfL[i][cols]
-    # df = reduce(lambda left, right: pd.merge(left, right, on=['file', 'bendID'], how='inner'), dfL)    
-
-
-    # clusters      = [3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20, 21, 22, 23,24,25,26,27,28,29,30]
-    # sampleSize    = 40000
-    # random_states = [20,43,50]
-
-
-    # ###############################################################
-    # # Select columns
-    # ###############################################################
-    # F = ['slope_out_normalized', 'slope_inn_normalized','slope_left_normalized', 'slope_right_normalized']
-    # cols = []
-    # for ch in [2,3,4]:
-    #     cols.extend([f + f'_0{ch}' for f in F])
-    #     cols.extend([f + f'_smooth_0{ch}' for f in F])
-
-    # ###############################################################
-    # # Scale selected columns
-    # ###############################################################
-    # X_scaled  = scale(df, cols)
-
-    # ###############################################################
-    # # PCA
-    # ###############################################################
-    # print('PCA')
-    # numPCA = 5
-    # pca = PCA(n_components=20)  # e.g., reduce to 10 components
-    # X_pca = pca.fit_transform(X_scaled)
-    # X_pca = X_pca[:,:numPCA]
-
-
-    # PCACols = [f'PCA{P}' for P in range(1,numPCA+1)]
-    # dfCluster = df.copy().dropna(subset = cols)
-    # dfCluster[PCACols] = X_pca[:, :numPCA]
-
-    # print(PCACols)
-    # ###############################################################
-    # # Kmeans
-    # # ###############################################################
-    # print('start Kmeans')
-    # silScore, davScore, scores = [], [], []
-    # for i,c in enumerate(clusters):
-    #     print(c)
-    #     sL, dL = [], []
-    #     for rs in random_states:
-    #         kmeans = KMeans(n_clusters=c,init='k-means++',random_state=rs)
-
-    #         s, d = resampleSilhouette(kmeans, dfCluster[PCACols]  , sampleSize, rs,False)
-    #         sL.append(s)
-    #         dL.append(d)
-    #     silScore.append(np.mean(sL))
-    #     davScore.append(np.mean(dL))
-    #     scores.append([c, np.mean(sL), np.mean(dL)])
-    #     print(f"Silhouette Score (sample size-{sampleSize}, random_state-{rs}):", np.round(silScore[i],3), np.round(davScore[i], 3))
-    #     print()
-    # dfKMEANSScores = pd.DataFrame(scores, columns = ['clusters', 'Silhouette', 'DaviesB'])
-    # dfKMEANSScores.to_csv(directory + f'results/KmeanScores_confinement_merged.csv')
-
-
-    # ###############################################################
-    # # PCA GMM
-    # ###############################################################
-    # print('GMM')
-    # def GMM_tune(X, n_components, n_init, covType, mi):
-    #     print(n_components, n_init, covType, mi)
-    #     gmm = GaussianMixture(n_components=n_components, 
-    #                         covariance_type=covType,
-    #                         max_iter = mi,
-    #                         init_params='kmeans',
-    #                         random_state=42, n_init = n_init)
-    #     gmm.fit(X)
-
-    #     labels = gmm.predict(X)
-    #     # 4. Calculate BIC score (lower is better)
-    #     bic = gmm.bic(X)
-    #     aic_score = gmm.aic(X)
-        
-    #     s,d = [], []
-    #     for rs in random_states:
-    #         Xs, Ls = stratified_sample(X, labels, sampleSize, rs)
-    #         # 5. Calculate Silhouette score (range -1 to 1, higher is better)
-    #         s.append(silhouette_score(Xs, Ls))
-    #         d.append(davies_bouldin_score(Xs, Ls))
-    #     sil_score = np.mean(s)
-    #     dav_score = np.mean(d)
-    #     # print(f"BIC score: {bic:.2f}")
-    #     # print(f"AIC: {aic_score:.3f}")
-    #     print(f"Silhouette Score: {sil_score:.3f}")
-    #     print(f"Davies bouldin Score: {dav_score:.3f}")
-    #     return bic, aic_score, sil_score, dav_score
-    #     # dbcv_score = validity_index(Xs, Ls, metric='euclidean')
-    #     # print(f"DBCV score: {dbcv_score:.3f}")
-
-
-    # scores = []
-    # for max_iter in [100]:
-    #     for covType in ['diag', 'tied']:
-    #         for init in [5]:
-    #             for n in clusters:
-                
-    #                 b, a, s, d = GMM_tune(dfCluster[PCACols], n, init, covType, max_iter)
-    #                 scores.append([max_iter,covType, init, n,b,a,s,d])
-    #                 # print(max_iter,covType, init, n)
-    #                 # time.sleep(2)
-
-    # dfGMMScores = pd.DataFrame(scores, columns = ['max_iter', 'cov_type', 'init', 'clusters', 'BIC', 'AIC', 'Silhouette', 'DaviesB'])
-    # dfGMMScores.to_csv(directory + f'results/GMMSCORES_confinement_merged.csv')
-    # print('Done GMM')
-
-
+from .clustering import GMM_tune, KmeansTune
+from .paths import format_factor_token, load_project_paths
+
+
+DEFAULT_HEIGHT_FACTORS = (2, 3, 4)
+DEFAULT_CLUSTERS = tuple(range(3, 21))
+DEFAULT_RANDOM_STATES = (20, 43, 50)
+DEFAULT_GMM_INIT_TYPES = ("k-means++", "kmeans")
+DEFAULT_GMM_MAX_ITERS = (200, 500)
+DEFAULT_GMM_COV_TYPES = ("tied", "diag")
+DEFAULT_GMM_INIT_COUNTS = (5, 15, 25, 50)
+
+
+def _score_output_files(paths, height_factor):
+    hf_token = format_factor_token(height_factor)
+    return {
+        "kmeans": paths.results_root / f"KmeanScores_confinement_{hf_token}.csv",
+        "gmm": paths.results_root / f"GMMSCORES_confinement_{hf_token}.csv",
+    }
+
+
+def open_dataset_confinement_clustering(height_factor, *, cross_factor=50, config_path=None):
+    paths = load_project_paths(config_path)
+    cross_token = format_factor_token(cross_factor)
+    hf_token = format_factor_token(height_factor)
+    input_file = paths.single_smoothed_dir / f"global_{cross_token}_{hf_token}_smoothed.nc"
+    if input_file.exists() is False:
+        raise FileNotFoundError(
+            f"Step 8 input file not found at {input_file}. "
+            f"Run Step 7 smoothing for height factor {hf_token} first."
+        )
+
+    with xr.open_dataset(input_file) as ds:
+        df = ds.to_dataframe().reset_index()
+    return df, input_file
+
+
+def prepare_confinement_clustering_dataframe(df):
+    slope_cols = [
+        "slope_out_normalized",
+        "slope_right_normalized",
+        "slope_left_normalized",
+        "slope_inn_normalized",
+    ]
+    slope_s_cols = [
+        "slope_out_normalized_smooth",
+        "slope_right_normalized_smooth",
+        "slope_left_normalized_smooth",
+        "slope_inn_normalized_smooth",
+    ]
+
+    feature_cols = slope_cols + slope_s_cols
+    df_cluster = df.dropna(subset=feature_cols).copy()
+    if df_cluster.empty:
+        raise ValueError(
+            "Step 8 clustering input has no rows after filtering missing slope variables."
+        )
+
+    x_scaled = scale(df_cluster, feature_cols)
+    n_components = min(8, x_scaled.shape[1], len(df_cluster))
+    if n_components < 2:
+        raise ValueError(
+            "Step 8 clustering requires at least two valid PCA components after filtering."
+        )
+
+    pca = PCA(n_components=n_components)
+    x_pca = pca.fit_transform(x_scaled)
+    keep_components = min(3, n_components)
+    pca_cols = [f"PCA{i}" for i in range(1, keep_components + 1)]
+    df_cluster[pca_cols] = x_pca[:, :keep_components]
+    return df_cluster, pca_cols
+
+
+def _validate_clusters(clusters, n_rows):
+    valid_clusters = sorted({int(c) for c in clusters if 1 < int(c) < n_rows})
+    if len(valid_clusters) == 0:
+        raise ValueError(
+            f"No valid cluster counts remain for Step 8. "
+            f"Requested clusters must be between 2 and {n_rows - 1} for the current dataset."
+        )
+    return valid_clusters
+
+
+def _effective_sample_size(sample_size, n_rows):
+    return max(2, min(int(sample_size), int(n_rows) - 1))
+
+
+def run_kmeans_scores(
+    df_cluster,
+    cluster_cols,
+    *,
+    clusters,
+    sample_size,
+    random_states,
+    cross_factor,
+    height_factor,
+):
+    effective_sample_size = _effective_sample_size(sample_size, len(df_cluster))
+    scores = KmeansTune(
+        df_cluster,
+        cluster_cols,
+        clusters,
+        effective_sample_size,
+        list(random_states),
+    )
+    df_scores = pd.DataFrame(scores, columns=["clusters", "Silhouette", "DaviesB"])
+    df_scores.insert(0, "height_factor", format_factor_token(height_factor))
+    df_scores.insert(0, "cross_factor", format_factor_token(cross_factor))
+    df_scores.insert(0, "n_rows", len(df_cluster))
+    return df_scores
+
+
+def run_gmm_scores(
+    df_cluster,
+    cluster_cols,
+    *,
+    clusters,
+    sample_size,
+    random_states,
+    workers,
+    init_types=DEFAULT_GMM_INIT_TYPES,
+    max_iters=DEFAULT_GMM_MAX_ITERS,
+    cov_types=DEFAULT_GMM_COV_TYPES,
+    init_counts=DEFAULT_GMM_INIT_COUNTS,
+    cross_factor,
+    height_factor,
+):
+    effective_sample_size = _effective_sample_size(sample_size, len(df_cluster))
+    runs = [
+        (init_type, max_iter, cov_type, init_count, cluster, effective_sample_size, list(random_states))
+        for init_type, max_iter, cov_type, init_count, cluster in itertools.product(
+            init_types,
+            max_iters,
+            cov_types,
+            init_counts,
+            clusters,
+        )
+    ]
+
+    x = df_cluster[cluster_cols]
+    if workers == 1:
+        scores = [GMM_tune(run, x) for run in runs]
+    else:
+        from joblib import Parallel, delayed
+
+        scores = Parallel(n_jobs=workers)(delayed(GMM_tune)(run, x) for run in runs)
+
+    df_scores = pd.DataFrame(
+        scores,
+        columns=[
+            "init_type",
+            "max_iter",
+            "covType",
+            "init",
+            "clusters",
+            "BIC",
+            "AIC",
+            "Silhouette",
+            "DaviesB",
+        ],
+    )
+    df_scores.insert(0, "height_factor", format_factor_token(height_factor))
+    df_scores.insert(0, "cross_factor", format_factor_token(cross_factor))
+    df_scores.insert(0, "n_rows", len(df_cluster))
+    return df_scores
+
+
+def run_confinement_clustering(
+    *,
+    cross_factor=50,
+    height_factors=DEFAULT_HEIGHT_FACTORS,
+    config_path=None,
+    clusters=DEFAULT_CLUSTERS,
+    sample_size=40000,
+    random_states=DEFAULT_RANDOM_STATES,
+    workers=1,
+):
+    paths = load_project_paths(config_path)
+    paths.results_root.mkdir(parents=True, exist_ok=True)
+
+    outputs = []
+    for height_factor in height_factors:
+        df, input_file = open_dataset_confinement_clustering(
+            height_factor,
+            cross_factor=cross_factor,
+            config_path=config_path,
+        )
+        df_cluster, cluster_cols = prepare_confinement_clustering_dataframe(df)
+        valid_clusters = _validate_clusters(clusters, len(df_cluster))
+        output_files = _score_output_files(paths, height_factor)
+
+        kmeans_scores = run_kmeans_scores(
+            df_cluster,
+            cluster_cols,
+            clusters=valid_clusters,
+            sample_size=sample_size,
+            random_states=random_states,
+            cross_factor=cross_factor,
+            height_factor=height_factor,
+        )
+        kmeans_scores.to_csv(output_files["kmeans"], index=False)
+
+        gmm_scores = run_gmm_scores(
+            df_cluster,
+            cluster_cols,
+            clusters=valid_clusters,
+            sample_size=sample_size,
+            random_states=random_states,
+            workers=workers,
+            cross_factor=cross_factor,
+            height_factor=height_factor,
+        )
+        gmm_scores.to_csv(output_files["gmm"], index=False)
+
+        outputs.append(
+            {
+                "height_factor": format_factor_token(height_factor),
+                "input_file": input_file,
+                "kmeans_scores": output_files["kmeans"],
+                "gmm_scores": output_files["gmm"],
+            }
+        )
+
+    return outputs
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Step 8 entrypoint: run confinement clustering on the smoothed dataset."
+    )
+    parser.add_argument(
+        "--config",
+        help="Path to config/paths.local.json. Defaults to config/paths.local.json when present.",
+    )
+    parser.add_argument(
+        "--cross-factor",
+        type=int,
+        default=50,
+        help="Cross-distance factor used in the current Step 8 run. Default: 50.",
+    )
+    parser.add_argument(
+        "--height-factors",
+        nargs="*",
+        type=float,
+        default=list(DEFAULT_HEIGHT_FACTORS),
+        help="Height factors to cluster, for example 2 3 4. Default: 2 3 4.",
+    )
+    parser.add_argument(
+        "--clusters",
+        nargs="*",
+        type=int,
+        default=list(DEFAULT_CLUSTERS),
+        help="Cluster counts to evaluate. Default: 3 through 20.",
+    )
+    parser.add_argument(
+        "--sample-size",
+        type=int,
+        default=40000,
+        help="Target sample size for silhouette and Davies-Bouldin scoring. Default: 40000.",
+    )
+    parser.add_argument(
+        "--random-states",
+        nargs="*",
+        type=int,
+        default=list(DEFAULT_RANDOM_STATES),
+        help="Random states used during tuning. Default: 20 43 50.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of parallel workers for the GMM tuning grid. Default: 1.",
+    )
+    return parser.parse_args(argv)
+
+
+def main_cli(argv=None):
+    args = parse_args(argv)
+    run_confinement_clustering(
+        cross_factor=args.cross_factor,
+        height_factors=args.height_factors,
+        config_path=args.config,
+        clusters=args.clusters,
+        sample_size=args.sample_size,
+        random_states=args.random_states,
+        workers=args.workers,
+    )
+
+
+if __name__ == "__main__":
+    main_cli()

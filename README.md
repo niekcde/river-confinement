@@ -59,9 +59,11 @@ Planned path-config idea:
 - Typical keys will include a results root plus shared-data roots such as SWORD vectors, SWORD nodes, and FABDEM
 
 Current implementation status:
-- The initial path-config layer is now in place for Step 1 via `pipeline/paths.py`
+- The canonical Steps 1 through 8 now use the shared path-config layer in `pipeline/paths.py`
+- The legacy Step 3 to Step 6 wrapper in `pipeline/run_confinement_values_shell.py` is now path-aware and delegates to the canonical stage entrypoints
+- `pipeline/select_raster.py` and the active path-setup cells in `pipeline/final_results.ipynb` now also use the shared project paths
 - `config/paths.local.json` is the intended user-specific override file and is gitignored
-- Later pipeline steps still need to be migrated onto the same config-driven path system
+- Remaining path cleanup is now mostly limited to older non-canonical helper functions, compatibility arguments, and stale commented examples
 
 Implementation note:
 - The physical top-level organization may move toward `code/`
@@ -261,14 +263,15 @@ Notes from the code audit:
 
 ### Step 7: spatially smooth the aggregated global confinement dataset
 
-Source of truth for this step is `pipeline/spatial_smoothing.py` together with `concat_nc_smooth_files(...)` in `pipeline/support.py`.
+Source of truth for this step is `pipeline/build_step7_spatial_smoothing.py` together with `pipeline/spatial_smoothing.py` and `concat_nc_smooth_files(...)` in `pipeline/support.py`.
 
 Current Step 7 code path:
-- `pipeline/spatial_smoothing.py` hard-codes `cross = 50` and `hfList = [2]`
-- It reads `results/single_values/global_50_02_conf.nc`
+- Run `python -m pipeline.build_step7_spatial_smoothing --height-factor {hf}`
+- `pipeline/spatial_smoothing.py` reads `results/single_values/global_50_{hf}_conf.nc` through the shared path setup
 - It derives additional normalized ER/slope variables from the global dataset
-- It runs `run_bend_smoothing(...)` per continent
-- It calls `concat_nc_smooth_files(directory, cross, hf)`
+- It runs `run_bend_smoothing(...)` per continent, with optional continent filtering and configurable workers
+- It writes one continent smoothed file per processed continent plus the corresponding `length_dict_{continent}.pkl`
+- It then calls `concat_nc_smooth_files(...)` to build the global smoothed dataset
 
 Transformation performed by code:
 - The script builds a bend-neighbor graph within each continent/network
@@ -276,28 +279,34 @@ Transformation performed by code:
 - It writes one smoothed NetCDF per continent and one combined global smoothed NetCDF
 
 Step 7 outputs written by code:
-- `results/single_smoothed/{continent}_50_02_smoothed.nc`
+- `results/single_smoothed/{continent}_50_{hf}_smoothed.nc`
 - `results/single_smoothed/length_dict_{continent}.pkl`
-- `results/single_smoothed/global_50_02_smoothed.nc`
+- `results/single_smoothed/global_50_{hf}_smoothed.nc`
 
 Notes from the code audit:
 - This is part of the main pipeline because the smoothed outputs feed the clustering workflow and the final-results workflow
-- In current code, only height factor `02` is processed here
+- The canonical Step 7 path is now config-driven through `pipeline/paths.py`
+- `results/single_smoothed/` is now created explicitly by the Step 7 path before writes
 
 ### Step 8: run confinement clustering analysis on the smoothed dataset
 
-Source of truth for this step is `pipeline/clustering_confinement.py`.
+Source of truth for this step is `pipeline/build_step8_confinement_clustering.py` together with `pipeline/clustering_confinement.py`.
 
 Current Step 8 code path:
-- `pipeline/clustering_confinement.py` opens `results/single_smoothed/global_50_0{ch}_smoothed.nc`
-- It loops over `ch in [2,3,4]`
-- It scales selected smoothed slope variables, runs PCA, and then runs clustering-tuning code
+- Run `python -m pipeline.build_step8_confinement_clustering --height-factors 2 3 4`
+- `pipeline/clustering_confinement.py` reads `results/single_smoothed/global_50_{hf}_smoothed.nc` through the shared path setup
+- It filters to rows with complete normalized slope and smoothed-slope variables
+- It scales those variables, runs PCA, and then runs KMeans and GMM tuning over the requested cluster counts
+- It writes one KMeans score table and one GMM score table per requested height factor
 
 Visible outputs written by code:
-- `results/GMMSCORES_confinement_0{ch}.csv`
+- `results/KmeanScores_confinement_{hf}.csv`
+- `results/GMMSCORES_confinement_{hf}.csv`
 
 Notes from the code audit:
 - This is part of the final analysis pipeline built on top of the smoothed confinement outputs
-- I do not see active KMeans output writes because the KMeans save line is commented out
-- The script currently appears internally inconsistent with the upstream smoothing script, which only builds smoothed data for `hf = 02`
+- The canonical Step 8 path is now config-driven through `pipeline/paths.py`
+- The canonical Step 8 path now writes both KMeans and GMM tuning tables and no longer depends on the old undefined `comb` variable
+- The clustering workflow still depends on Step 7 having already produced the requested smoothed height factors
 - `pipeline/final_results.ipynb` imports clustering helpers and reads the smoothed `global_50_02_smoothed.nc` output, so the smoothing stage is not optional for the current final workflow
+- The active path-setup cells in `pipeline/final_results.ipynb` now point at the shared project paths instead of the older `/Volumes/...` layout

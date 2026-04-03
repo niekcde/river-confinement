@@ -24,7 +24,7 @@ from glob import glob
 
 
 # import custom modules
-from .paths import resolve_results_root
+from .paths import load_project_paths, resolve_results_root, format_factor_token
 from .calc_functions import get_entrenchment_slope_intersect,\
       get_entrenchment_slope_no_intersect, slope_curvature
 # from confinement_margin import confinement_margin
@@ -1115,17 +1115,39 @@ def open_single_values(files):
 #     return (m * x + b)
 import xarray as xr
 
-def concat_nc_smooth_files(directory, cross, hf = 2):
+def concat_nc_smooth_files(directory = None, cross = 50, hf = 2, config_path = None):
+    if isinstance(hf, float) and hf.is_integer():
+        hf = int(hf)
+
+    if directory is None:
+        project_paths = load_project_paths(config_path)
+        project_paths.ensure_step7_dirs()
+        single_smoothed_dir = project_paths.single_smoothed_dir
+    else:
+        results_root = resolve_results_root(directory)
+        single_smoothed_dir = results_root / 'single_smoothed'
+        single_smoothed_dir.mkdir(parents=True, exist_ok=True)
+
+    cross_token = format_factor_token(cross)
+    hf_token = format_factor_token(hf)
     dsList = []
 
     for c in ['af', 'as', 'sa', 'na', 'oc', 'eu']:
         print(c)
-        f = directory + f'results/single_smoothed/{c}_{cross}_{hf}_smoothed.nc'
-        dsTemp = xr.open_dataset(f)
-        dsList.append(dsTemp)
-        
+        f = single_smoothed_dir / f'{c}_{cross_token}_{hf_token}_smoothed.nc'
+        if f.exists():
+            dsTemp = xr.open_dataset(f)
+            dsList.append(dsTemp)
+
+    if len(dsList) == 0:
+        raise FileNotFoundError(
+            f"No Step 7 continent smoothed files were found in {single_smoothed_dir} "
+            f"for cross {cross_token} and height factor {hf_token}."
+        )
+
     ds = xr.concat(dsList, dim='index')
-    fName = directory + f'results/single_smoothed/global_{cross}_{hf}_smoothed.nc'
-    if os.path.exists(fName):
-        os.remove(fName)
+    fName = single_smoothed_dir / f'global_{cross_token}_{hf_token}_smoothed.nc'
+    if fName.exists():
+        fName.unlink()
     ds.to_netcdf(fName)
+    return fName

@@ -175,6 +175,13 @@ class ProjectPaths:
         ):
             path.mkdir(parents=True, exist_ok=True)
 
+    def ensure_step7_dirs(self) -> None:
+        for path in (
+            self.results_root,
+            self.single_smoothed_dir,
+        ):
+            path.mkdir(parents=True, exist_ok=True)
+
     def ensure_fabdem_dirs(self) -> None:
         for path in (
             self.input_created_root,

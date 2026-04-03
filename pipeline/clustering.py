@@ -61,7 +61,11 @@ def GMM_tune(vars, X):
     for rs in random_states:
         _, labelCount = np.unique(labels, return_counts=True)
         if all(labelCount>1):
-            Xs, Ls = stratified_sample(X, labels,cluster, sampleSize, rs)
+            try:
+                Xs, Ls = stratified_sample(X, labels,cluster, sampleSize, rs)
+            except ValueError:
+                Xs, Ls = X, labels
+
             if Xs is None:
                 s.append(np.nan)
                 d.append(np.nan)
@@ -111,7 +115,10 @@ def KmeansTune(df, cols, clusters, sampleSize, randomStates):
         for rs in randomStates:
             kmeans = KMeans(n_clusters=c,init='k-means++',random_state=rs)
             labels = kmeans.fit_predict(df[cols])
-            Xs, Ys = stratified_sample(df[cols], labels, c, sampleSize, rs = rs)
+            try:
+                Xs, Ys = stratified_sample(df[cols], labels, c, sampleSize, rs = rs)
+            except ValueError:
+                Xs, Ys = df[cols], labels
             silScore.append(silhouette_score(Xs, Ys))
             davScore.append(davies_bouldin_score(Xs, Ys))
         scores.append([c, np.mean(silScore), np.mean(davScore)])
