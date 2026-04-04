@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .paths import load_project_paths, resolve_results_root
+from .paths import load_project_paths
 from .run_confinement_values import calc_confinement_values
 
 
@@ -65,21 +65,13 @@ def _discover_step5_inputs(paths, continent_input=None, conf_factor=50, input_fi
     return files
 
 
-def _resolve_step5_output_dirs(paths, directory=None):
-    if directory is None:
-        paths.ensure_step5_dirs()
-        return paths.single_values_dir, paths.reach_averaged_dir
-
-    results_root = resolve_results_root(directory)
-    single_values_dir = results_root / "single_values"
-    reach_averaged_dir = results_root / "reach_averaged"
-    for path in (results_root, single_values_dir, reach_averaged_dir):
-        path.mkdir(parents=True, exist_ok=True)
-    return single_values_dir, reach_averaged_dir
+def _resolve_step5_output_dirs(paths):
+    paths.ensure_step5_dirs()
+    return paths.single_values_dir, paths.reach_averaged_dir
 
 
-def _step5_output_files(paths, file_stem, height_factor, directory=None):
-    single_values_dir, reach_averaged_dir = _resolve_step5_output_dirs(paths, directory)
+def _step5_output_files(paths, file_stem, height_factor):
+    single_values_dir, reach_averaged_dir = _resolve_step5_output_dirs(paths)
     hf_save = _format_height_factor(height_factor)
     return {
         "reach_averaged": reach_averaged_dir / f"{file_stem}_{hf_save}.gpkg",
@@ -89,13 +81,12 @@ def _step5_output_files(paths, file_stem, height_factor, directory=None):
 
 
 def _step5_worker(args):
-    input_file, height_factor, conf_factor, directory, config_path = args
+    input_file, height_factor, conf_factor, config_path = args
     input_path = Path(input_file)
     df = pd.read_csv(input_path)
     calc_confinement_values(
         df,
         input_path.stem,
-        directory,
         False,
         True,
         conf_factor,
@@ -103,7 +94,7 @@ def _step5_worker(args):
         config_path=config_path,
     )
     paths = load_project_paths(config_path)
-    return _step5_output_files(paths, input_path.stem, height_factor, directory)
+    return _step5_output_files(paths, input_path.stem, height_factor)
 
 
 def run_step5_confinement_outputs(
@@ -116,10 +107,9 @@ def run_step5_confinement_outputs(
     input_file=None,
     input_files=None,
     overwrite=True,
-    directory=None,
 ):
     paths = load_project_paths(config_path)
-    _resolve_step5_output_dirs(paths, directory)
+    _resolve_step5_output_dirs(paths)
 
     if input_files is None:
         resolved_inputs = _discover_step5_inputs(
@@ -143,7 +133,7 @@ def run_step5_confinement_outputs(
     resolved_config = str(paths.config_path) if paths.config_path is not None else config_path
 
     for input_path in resolved_inputs:
-        file_outputs = _step5_output_files(paths, input_path.stem, height_factor, directory)
+        file_outputs = _step5_output_files(paths, input_path.stem, height_factor)
         if overwrite:
             for output_file in file_outputs.values():
                 if output_file.exists():
@@ -152,7 +142,7 @@ def run_step5_confinement_outputs(
             outputs.append(file_outputs)
             continue
 
-        tasks.append((str(input_path), height_factor, conf_factor, directory, resolved_config))
+        tasks.append((str(input_path), height_factor, conf_factor, resolved_config))
 
     if workers == 1 or len(tasks) <= 1:
         for task in tasks:

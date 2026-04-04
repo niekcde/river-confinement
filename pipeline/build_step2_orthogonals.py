@@ -9,7 +9,7 @@ if __package__ in (None, ""):
 
 import argparse
 
-from .main import build_step2_orthogonals_for_file, run_geometry_cli
+from .step2 import build_step2_orthogonals_for_file, run_geometry_cli
 
 
 def parse_args():

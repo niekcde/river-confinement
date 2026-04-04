@@ -12,15 +12,13 @@ import argparse
 from .run_confinement_values import concat_nc_conf_files, concat_reachAveraged
 
 
-def run_step6_aggregates(*, cross_factor=50, height_factor=2, config_path=None, directory=None):
+def run_step6_aggregates(*, cross_factor=50, height_factor=2, config_path=None):
     global_nc = concat_nc_conf_files(
-        directory=directory,
         cross=cross_factor,
         hf=height_factor,
         config_path=config_path,
     )
     reach_outputs = concat_reachAveraged(
-        directory=directory,
         cross=cross_factor,
         hf=height_factor,
         config_path=config_path,

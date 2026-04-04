@@ -60,10 +60,9 @@ Planned path-config idea:
 
 Current implementation status:
 - The canonical Steps 1 through 8 now use the shared path-config layer in `pipeline/paths.py`
-- The legacy Step 3 to Step 6 wrapper in `pipeline/run_confinement_values_shell.py` is now path-aware and delegates to the canonical stage entrypoints
 - `pipeline/select_raster.py` and the active path-setup cells in `pipeline/final_results.ipynb` now also use the shared project paths
 - `config/paths.local.json` is the intended user-specific override file and is gitignored
-- Remaining path cleanup is now mostly limited to older non-canonical helper functions, compatibility arguments, and stale commented examples
+- Remaining path cleanup is now mostly limited to older non-canonical helper functions and stale commented examples
 
 Implementation note:
 - The physical top-level organization may move toward `code/`
@@ -75,7 +74,7 @@ Implementation note:
 
 Source of truth for this step is the active pipeline code in `pipeline/segment_reaches.py`, `pipeline/paths.py`, `pipeline/reach_definition.py`, and `pipeline/support.py`.
 
-The first pipeline step is now a dedicated segmentation entrypoint. The default CLI path later in `pipeline/main.py` depends on outputs from this step, so `pipeline/run_confinement_values_shell.py` is not the start of the pipeline.
+The first pipeline step is now a dedicated segmentation entrypoint. The canonical Step 2 path later in `pipeline/build_step2_results.py` depends on outputs from this step, so the old Step 3 to Step 6 shell wrapper is not the start of the pipeline.
 
 Current Step 1 code path:
 - Run `python -m pipeline.segment_reaches [continents...]`
@@ -95,11 +94,9 @@ Step 1 outputs written by code:
 
 Notes from the code audit:
 - This first step now has its own stable entrypoint in `pipeline/segment_reaches.py`
-- `pipeline/main.py` now starts at Step 2
+- `pipeline/main.py` is now only a compatibility wrapper that delegates to the canonical Step 2 entrypoint
 - There is no `.sh`, `.bash`, or `.zsh` pipeline entrypoint in this repository
-- Multiple active scripts hard-code `directory = '/scratch/6256481/'`; that external path was not verified in this session
 - The current Step 1 entrypoint still assumes exactly one reach file and one node file per continent, because the downstream Step 2 filename logic expects outputs named like `{continent}_{group}_...`
-- The Step 1 path/config layer is now separate from the Step 2+ hard-coded path handling, so the rest of the pipeline still needs the same cleanup pattern later
 
 ### Step 1.5: build the FABDEM VRT and bounds cache
 
@@ -122,19 +119,19 @@ Notes from the code audit:
 
 ### Step 2: run the first confinement-metric pass on segmented reaches
 
-Source of truth for this step is the default CLI path in `pipeline/main.py`.
+Source of truth for this step is `pipeline/build_step2_results.py` together with the worker/orchestration helpers in `pipeline/step2.py`.
 
 Current Step 2 code path:
-- `pipeline/main.py` reads `continentInput = sys.argv[1]` and `number_of_processors = int(sys.argv[2])`
-- It loads `results/reference_tables/file_sorting.csv`, filters rows for the requested continent, and builds `multiInput = [[filePath, 50], ...]`
-- Under `if __name__ == '__main__':` it runs `Pool(number_of_processors).imap(main, multiInput)`
-- `main(...)` opens the segmented reach/node files from Step 1, reads `results/reference_tables/smoothingFactor.csv`, and computes bend/confinement metrics plus orthogonal geometry
+- Run `python -m pipeline.build_step2_results {continent} {processors}`
+- `pipeline/build_step2_results.py` parses the CLI and calls `run_results_cli(...)` in `pipeline/step2.py`
+- `pipeline/step2.py` loads `results/reference_tables/file_sorting.csv`, filters rows for the requested continent, and builds the Step 2 file batch
+- `process_file(...)` in `pipeline/step2.py` opens the segmented reach/node files from Step 1, reads `results/reference_tables/smoothingFactor.csv`, and computes bend/confinement metrics plus orthogonal geometry
 - It writes a geometry intermediate to `results/orthogonals/{continent}_{file_id}_50.gpkg`
 - The geometry-only stage can now be run directly with `python -m pipeline.build_step2_orthogonals {continent} {processors}`
 - For single-file debugging, the geometry-only stage can also be run with `python -m pipeline.build_step2_orthogonals --vector-file results/new_segments/vector/{file}.gpkg`
 - It then runs the separate DEM-sampling stage in `pipeline/sample_step2_profiles.py`
 - That stage reads the saved orthogonals, opens `input_created/dem/FAB_dem_vrt.vrt`, and writes sampled profiles to `results/profiles/{continent}_{file_id}_50.csv`
-- `pipeline/main.py` finally assembles those sampled values back into the final Step 2 table
+- `process_file(...)` in `pipeline/step2.py` finally assembles those sampled values back into the final Step 2 table
 
 Step 2 outputs written by code:
 - `results/orthogonals/{continent}_{file_id}_50.gpkg`
@@ -144,14 +141,15 @@ Step 2 outputs written by code:
 Notes from the code audit:
 - Step 2 depends on Step 1 outputs already existing, especially `results/new_segments/...` and `results/reference_tables/file_sorting.csv`
 - Step 2 also depends on Step 1.5 output `input_created/dem/FAB_dem_vrt.vrt`
-- The active code fixes `confFactor = 50` in `pipeline/main.py`
-- The current Step 2 implementation now pre-groups reach and node rows per `combined_reach_id` inside `pipeline/main.py` to reduce repeated dataframe filtering within a file
+- The active code fixes `confFactor = 50` in the current canonical Step 2 CLI unless a different `--conf-factor` is passed
+- The current Step 2 implementation now pre-groups reach and node rows per `combined_reach_id` inside `pipeline/step2.py` to reduce repeated dataframe filtering within a file
 - The current Step 2 implementation now separates orthogonal-line geometry creation from DEM profile sampling inside `pipeline/get_orthogonals.py`
-- `pipeline/main.py` now writes a real orthogonal intermediate and assembles the final Step 2 CSV from a separate sampled-profile intermediate
+- `pipeline/step2.py` now writes a real orthogonal intermediate and assembles the final Step 2 CSV from a separate sampled-profile intermediate
 - The new geometry-only entrypoint in `pipeline/build_step2_orthogonals.py` allows Step 2 orthogonals to be tested independently from DEM sampling
 - The DEM-sampling stage can now also be called directly with `python -m pipeline.sample_step2_profiles results/orthogonals/{file}.gpkg`
 - When Step 2 is run with `processors = 1`, the current code now runs sequentially instead of using a one-worker multiprocessing pool
-- These `results/all/*.csv` files are consumed downstream by `pipeline/open_to_single_apex.py` and `pipeline/run_confinement_values_shell.py`
+- Geometry-only Step 2 runs now clear only prior `results/orthogonals/*.gpkg` outputs and no longer remove `results/all/*.csv`
+- These `results/all/*.csv` files are consumed downstream by the canonical Step 3 entrypoint `pipeline/build_step3_single_values.py`
 
 ### Step 3: expand Step 2 reach files into single-bend value tables
 
@@ -162,8 +160,6 @@ Current Step 3 code path:
 - For single-file debugging, run `python -m pipeline.build_step3_single_values --input-file results/all/{file}.csv`
 - `pipeline/build_step3_single_values.py` discovers Step 2 files in `results/all/`, ensures `results/single_values/` exists, and parallelizes the Step 3 worker
 - The worker calls `create_apex_val_dataframe(...)`
-- `pipeline/open_to_single_apex.py` is now only a compatibility wrapper around the canonical Step 3 CLI
-- The Step 3 block in `pipeline/run_confinement_values_shell.py` now also calls the same helper instead of duplicating its own file loop
 
 Transformation performed by code:
 - `create_apex_val_dataframe(...)` reads one Step 2 CSV
@@ -192,7 +188,6 @@ Current Step 4 code path:
 - It reads only the `bendWidths` column from those files
 - It calls `confinement_factor_single_values(df, 'bendWidths', 50, 10)`
 - It writes the result to `results/reference_tables/confinement_factor_50.csv`
-- The Step 4 block in `pipeline/run_confinement_values_shell.py` now also calls the same helper instead of keeping its own concatenation logic
 
 Transformation performed by code:
 - `confinement_factor_single_values(...)` computes a linearly scaled factor from `bendWidths`
@@ -218,7 +213,6 @@ Current Step 5 code path:
 - `pipeline/build_step5_confinement_outputs.py` discovers Step 3 files in `results/single_values/`
 - It ensures `results/reach_averaged/` and the Step 5 `results/single_values/*_conf.*` output paths exist
 - The worker reads one `results/single_values/{continent}_{file_id}_50.csv` file and calls `calc_confinement_values(...)`
-- The `for hf in heightFactor` loop in `pipeline/run_confinement_values_shell.py` now also calls the same helper instead of keeping its own per-file multiprocessing block
 
 Transformation performed by code:
 - `calc_confinement_values(...)` opens `input_created/dem/FAB_dem_vrt.vrt`
@@ -245,7 +239,6 @@ Source of truth for this step is `pipeline/build_step6_aggregates.py` together w
 Current Step 6 code path:
 - Run `python -m pipeline.build_step6_aggregates --height-factor {hf}`
 - `pipeline/build_step6_aggregates.py` calls `concat_nc_conf_files(...)` and `concat_reachAveraged(...)` for one `heightFactor`
-- After each Step 5 batch for one `hf`, `pipeline/run_confinement_values_shell.py` now calls the same helper instead of calling the aggregation functions directly
 
 Transformation performed by code:
 - `concat_nc_conf_files(...)` opens all per-file `*_conf.nc` outputs for a given `hf`, appends continent/file identifiers, drops several geometry-heavy variables, and concatenates them into one global dataset
