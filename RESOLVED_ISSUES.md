@@ -58,7 +58,7 @@ Resolution:
 
 Status update:
 - The canonical Step 4 helper now checks for missing inputs explicitly
-- When no Step 3 files are available, it raises a clear `FileNotFoundError` instead of failing later with an undefined dataframe
+- When no canonical bend-level Step 2 files are available, it raises a clear `FileNotFoundError` instead of failing later with an undefined dataframe
 
 Resolution:
 - No specific empty-input bug remains in the canonical Step 4 path
@@ -135,3 +135,53 @@ Status update:
 
 Resolution:
 - The main active pipeline no longer carries the redundant compatibility interfaces that were tracked in this issue
+
+## 15. Step 1 multi-file-per-continent guard wording
+
+Status update:
+- The canonical Step 1 path intentionally validates that there is exactly one reach file and one node file per continent
+- The validation error now states clearly that the configured input folders contain too many files for that continent and lists the matching filenames
+
+Resolution:
+- The one-file-per-continent check is now treated as an explicit guardrail, not as an ambiguous pipeline failure
+
+## 7. Reach-averaged geometry reconstruction in Step 5
+
+Status update:
+- The broken placeholder `merge_centerlines(dfSingle, _, _, False)` call has been removed from the canonical Step 5 path
+- The canonical bend-level Step 2 output now carries `centerlineWkt`
+- Step 5 now uses that saved centerline to populate reach-averaged geometry in the canonical path
+
+Resolution:
+- The canonical Step 5 path no longer depends on the broken placeholder merge call for reach-averaged geometry
+
+## 17. Step 2 nested profile CSV serialization
+
+Status update:
+- The canonical Step 2 path now writes `results/bends/*.parquet` with one row per bend
+- The DEM profile arrays now travel through the canonical pipeline as bend-level columns instead of large reach-level CSV string blobs
+- `pipeline/sample_step2_profiles.py` still supports CSV export for debugging, but that is no longer the canonical handoff
+
+Resolution:
+- The canonical pipeline no longer depends on the large nested-list `results/profiles/*.csv` and `results/all/*.csv` handoff format
+
+## 18. Step 3 removable after bend-level Step 2 output
+
+Status update:
+- The canonical Step 2 path now writes bend-level tables directly
+- Step 4 and Step 5 now consume those bend-level Step 2 outputs directly
+- `pipeline/build_step3_single_values.py` now exists only as a compatibility exporter to the legacy `results/single_values/*.csv` format
+- The canonical bend-level builder now creates one row per bend directly instead of flattening reach rows with `explode(...)`
+
+Resolution:
+- The canonical pipeline no longer requires Step 3 as a mandatory transformation stage
+
+## 13. Step 7 and Step 8 multi-height orchestration
+
+Status update:
+- The canonical Step 7 entrypoint can smooth any requested height factor
+- The canonical Step 8 entrypoint can cluster any requested height factor
+- The canonical workflow `pipeline/build_step7_8_confinement_workflow.py` now runs the required height-factor set together, by default `2 3 4`
+
+Resolution:
+- The canonical analysis workflow no longer relies on manual alignment between Step 7 smoothing and Step 8 clustering

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .bend_io import read_bend_table
 from .paths import load_project_paths
 from .run_confinement_values import calc_confinement_values
 
@@ -48,17 +49,17 @@ def _discover_step5_inputs(paths, continent_input=None, conf_factor=50, input_fi
 
     conf_factor_str = _format_conf_factor(conf_factor)
     if continent_input is None:
-        files = sorted(paths.single_values_dir.glob(f"??_??_{conf_factor_str}.csv"))
+        files = sorted(paths.bends_dir.glob(f"??_??_{conf_factor_str}.parquet"))
     else:
-        files = sorted(paths.single_values_dir.glob(f"{continent_input}_??_{conf_factor_str}.csv"))
+        files = sorted(paths.bends_dir.glob(f"{continent_input}_??_{conf_factor_str}.parquet"))
 
     if len(files) == 0:
         if continent_input is None:
             raise FileNotFoundError(
-                f"No Step 3 files found in {paths.single_values_dir} for conf_factor {conf_factor_str}."
+                f"No bend-level Step 2 files found in {paths.bends_dir} for conf_factor {conf_factor_str}."
             )
         raise FileNotFoundError(
-            f"No Step 3 files found for continent '{continent_input}' in {paths.single_values_dir} "
+            f"No bend-level Step 2 files found for continent '{continent_input}' in {paths.bends_dir} "
             f"for conf_factor {conf_factor_str}."
         )
 
@@ -83,12 +84,17 @@ def _step5_output_files(paths, file_stem, height_factor):
 def _step5_worker(args):
     input_file, height_factor, conf_factor, config_path = args
     input_path = Path(input_file)
-    df = pd.read_csv(input_path)
+    if input_path.suffix.lower() == ".csv":
+        df = pd.read_csv(input_path)
+        open_separate = True
+    else:
+        df = read_bend_table(input_path)
+        open_separate = False
     calc_confinement_values(
         df,
         input_path.stem,
         False,
-        True,
+        open_separate,
         conf_factor,
         height_factor,
         config_path=config_path,
@@ -157,7 +163,7 @@ def run_step5_confinement_outputs(
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Step 5 entrypoint: compute confinement outputs from Step 3 single-bend tables."
+        description="Step 5 entrypoint: compute confinement outputs from bend-level Step 2 tables."
     )
     parser.add_argument("continent", nargs="?", help="Continent code to process, for example 'af' or 'oc'.")
     parser.add_argument("processors", nargs="?", type=int, help="Number of worker processes to use.")
@@ -179,7 +185,7 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--input-file",
-        help="Run Step 5 for one specific Step 3 CSV file instead of a whole continent batch.",
+        help="Run Step 5 for one specific bend-level Step 2 file instead of a whole continent batch.",
     )
     parser.add_argument(
         "--keep-existing",

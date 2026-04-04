@@ -47,17 +47,17 @@ def _discover_step3_inputs(paths, continent_input=None, conf_factor=50, input_fi
 
     conf_factor_str = _format_conf_factor(conf_factor)
     if continent_input is None:
-        files = sorted(paths.all_dir.glob(f"??_??_{conf_factor_str}.csv"))
+        files = sorted(paths.bends_dir.glob(f"??_??_{conf_factor_str}.parquet"))
     else:
-        files = sorted(paths.all_dir.glob(f"{continent_input}_??_{conf_factor_str}.csv"))
+        files = sorted(paths.bends_dir.glob(f"{continent_input}_??_{conf_factor_str}.parquet"))
 
     if len(files) == 0:
         if continent_input is None:
             raise FileNotFoundError(
-                f"No Step 2 files found in {paths.all_dir} for conf_factor {conf_factor_str}."
+                f"No bend-level Step 2 files found in {paths.bends_dir} for conf_factor {conf_factor_str}."
             )
         raise FileNotFoundError(
-            f"No Step 2 files found for continent '{continent_input}' in {paths.all_dir} "
+            f"No bend-level Step 2 files found for continent '{continent_input}' in {paths.bends_dir} "
             f"for conf_factor {conf_factor_str}."
         )
 
@@ -82,7 +82,7 @@ def run_step3_single_values(
         conf_factor=conf_factor,
         input_file=input_file,
     )
-    output_files = [paths.single_values_dir / input_path.name for input_path in input_files]
+    output_files = [paths.single_values_dir / f"{input_path.stem}.csv" for input_path in input_files]
 
     if overwrite:
         for output_file in output_files:
@@ -105,7 +105,7 @@ def run_step3_single_values(
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Step 3 entrypoint: expand Step 2 reach files into single-bend value tables."
+        description="Step 3 compatibility entrypoint: export bend-level Step 2 tables to the legacy single_values CSV format."
     )
     parser.add_argument("continent", nargs="?", help="Continent code to process, for example 'af' or 'oc'.")
     parser.add_argument("processors", nargs="?", type=int, help="Number of worker processes to use.")
@@ -121,7 +121,7 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--input-file",
-        help="Run Step 3 for one specific Step 2 CSV file instead of a whole continent batch.",
+        help="Run Step 3 for one specific bend-level Step 2 file instead of a whole continent batch.",
     )
     parser.add_argument(
         "--keep-existing",

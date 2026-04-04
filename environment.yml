@@ -24,4 +24,5 @@ dependencies:
   - networkx
   - psutil
   - scikit-learn
+  - pyarrow
   - pip

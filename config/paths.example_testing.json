@@ -1,8 +1,8 @@
 {
   "data_root": "./data",
-  "results_root": "./results",
+  "results_root": "./results_oc00_test",
   "swot_vector_dir": "/Volumes/PhD/SWORD/v17/GPKG",
   "swot_nodes_dir": "/Volumes/PhD/SWORD/v17/GPKG",
   "fabdem_dir": "/Volumes/PhD/FABDEM",
-  "input_created_root": "./input_created"
+  "input_created_root": "./input_created_oc00_test"
 }

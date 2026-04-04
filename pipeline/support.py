@@ -1039,8 +1039,10 @@ def expand_dataframe(df):
     if not list_cols:
         return df  # Return original if no list columns found
     
-    # Expand DataFrame
-    df_expanded = df.explode(list_cols, ignore_index=True)
+    # GeoDataFrame.explode is for geometry expansion and only accepts one column.
+    # Convert to a plain pandas DataFrame so multi-column list expansion uses the
+    # pandas implementation instead of the GeoPandas override.
+    df_expanded = pd.DataFrame(df).explode(list_cols, ignore_index=True)
     return df_expanded
 
 def confinement_factor(df, y1, y2):

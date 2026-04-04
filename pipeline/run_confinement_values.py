@@ -1,4 +1,5 @@
-from .support import confinement_factor, str_to_list, expand_dataframe, str_to_list_comb
+from .bend_io import read_bend_table
+from .support import confinement_factor, str_to_list, str_to_list_comb
 from .calc_functions import confinement_values
 from .paths import load_project_paths, format_factor_token
 
@@ -8,6 +9,101 @@ import pandas as pd
 from pathlib import Path
 
 from tqdm import tqdm 
+
+
+def _split_file_stem(file_stem):
+    parts = str(file_stem).split("_")
+    if len(parts) >= 2:
+        return parts[0], parts[1]
+    return None, None
+
+
+def _list_length(value):
+    if isinstance(value, list):
+        return len(value)
+    return 0
+
+
+def _row_bend_count(row, candidate_cols):
+    for col in candidate_cols:
+        length = _list_length(row.get(col))
+        if length > 0:
+            return length
+    return 0
+
+
+def _value_for_bend(value, bend_index):
+    if isinstance(value, list):
+        if bend_index < len(value):
+            return value[bend_index]
+        return np.nan
+    return value
+
+
+def prepare_bend_level_dataframe(df, file_stem=None):
+    dfInc = df[(df['include_flag'] == '0') & (df['calculated'] == '0')].copy()
+    if dfInc.empty:
+        df_empty = dfInc.copy()
+        if 'bend_index' not in df_empty.columns:
+            df_empty['bend_index'] = pd.Series(dtype='int64')
+        if file_stem is not None:
+            file_cont, file_id = _split_file_stem(file_stem)
+            df_empty['file_stem'] = file_stem
+            df_empty['file_cont'] = file_cont
+            df_empty['file_id'] = file_id
+            df_empty['bend_id'] = pd.Series(dtype='object')
+        return df_empty
+
+    dropCols = ['x', 'y', 'swot_obs', 'edit_flag', 'trib_flag', 'wse_var', 'width_var']
+    dfInc = dfInc.drop(columns=[col for col in dropCols if col in dfInc.columns])
+
+    listStrCols = ['LROrthog', 'bendMaxWidths', 'bendWidths', 'ang', 'bendSin', 'apex', 'bendDistOut', 'bendLen', 'bendHeight']
+    listGeomCols = ['apexP', 'lineInn', 'lineOut', 'bendLines']
+    listNestCols = ['distOut', 'distInn', 'elevInn', 'elevOut']
+    listCols = listStrCols + listGeomCols + listNestCols
+
+    dfReach = str_to_list_comb(dfInc, listCols, listNestCols)
+
+    if 'geometry' in dfReach.columns:
+        dfReach['geometry'] = dfReach['geometry'].apply(
+            lambda geom: geom.wkt if hasattr(geom, 'wkt') else geom
+        )
+
+    bend_count_cols = ['bendWidths', 'bendLines', 'distOut', 'elevOut', 'apex', 'lineInn', 'lineOut', 'LROrthog']
+    bend_rows = []
+    for _, row in dfReach.iterrows():
+        bend_count = _row_bend_count(row, bend_count_cols)
+        if bend_count == 0:
+            continue
+
+        row_dict = row.to_dict()
+        for bend_index in range(bend_count):
+            bend_row = row_dict.copy()
+            for col in listCols:
+                bend_row[col] = _value_for_bend(row_dict.get(col), bend_index)
+            bend_row['bend_index'] = bend_index
+            bend_rows.append(bend_row)
+
+    dfE = pd.DataFrame(bend_rows)
+    if dfE.empty:
+        dfE = pd.DataFrame(columns=list(dfReach.columns) + ['bend_index'])
+
+    if file_stem is not None:
+        file_cont, file_id = _split_file_stem(file_stem)
+        dfE['file_stem'] = file_stem
+        dfE['file_cont'] = file_cont
+        dfE['file_id'] = file_id
+        dfE['bend_id'] = (
+            dfE['file_stem'].astype(str)
+            + '_'
+            + dfE['combined_reach_id'].astype(int).astype(str)
+            + '_'
+            + dfE['bend_index'].astype(int).astype(str)
+        )
+
+    return dfE
+
+
 def _format_height_factor(hf):
     if isinstance(hf, float) and hf.is_integer():
         hf = int(hf)
@@ -48,8 +144,6 @@ def ER_slope_margin_values(dfInc,demVRT, cf = [50,10], heightFactor = 2,
     import geopandas as gpd
     import shapely
 
-    from .connect_geometries import merge_centerlines
-
     print(f'run_confinement_values - calc_confinement_values - ER_slope_margin_values: Start')
     
     # Find confinement factor value
@@ -76,15 +170,13 @@ def ER_slope_margin_values(dfInc,demVRT, cf = [50,10], heightFactor = 2,
     for i, rid in enumerate(reachIDS):
 
         dfReach     = dfInc[dfInc['combined_reach_id'] == rid].copy()
-        # GroupedCRS = dfReach.groupby('localCRS', as_index = False).size()
-        # reachCRS   = GroupedCRS.loc[GroupedCRS['size'] == GroupedCRS['size'].max()
-        #                                     ,'localCRS'].iloc[0]
-        try:
-            dfSingle = dfReach.groupby('combined_reach_id').agg({'reach_order':'first', 'geometry':'first', 'dn_connected_reach':'first'})
-            dfSingle['geometry'] = shapely.from_wkt(dfSingle['geometry'])
-            L, _, _= merge_centerlines(dfSingle, _, _, False)
-            crGeoms[i] = L
-        except:
+        centerline_vals = dfReach.get('centerlineWkt')
+        if centerline_vals is not None:
+            centerline_vals = centerline_vals.dropna()
+        if centerline_vals is not None and centerline_vals.empty is False:
+            crGeoms[i] = shapely.from_wkt(centerline_vals.iloc[0])
+        else:
+            print(f"Missing centerlineWkt for combined_reach_id {rid}; saving empty reach-averaged geometry.")
             crGeoms[i] = shapely.geometry.LineString()
 
 
@@ -279,22 +371,11 @@ def create_apex_val_dataframe(file, output_path = None, returnDataframe = False,
             output_file = (paths.repo_root / output_file).resolve()
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
-    df = pd.read_csv(input_file, dtype = {'include_flag': str, 'calculated': str})
-
-    dfInc = df[(df['include_flag'] == '0') & (df['calculated'] == '0')]
-    dropCols = ['x', 'y', 'swot_obs', 'edit_flag', 'trib_flag', 'wse_var', 'width_var']
-    dfInc = dfInc.drop(dropCols, axis = 1)
-
-
-    listStrCols = ['LROrthog', 'bendMaxWidths', 'bendWidths', 'ang', 'bendSin', 'apex', 'bendDistOut', 'bendLen', 'bendHeight'] # new run needed
-    # listStrCols = ['LROrthog', 'bendMaxWidths', 'bendWidths', 'ang', 'bendSin', 'apex', 'bendDistOut']
-    listGeomCols = ['apexP', 'lineInn', 'lineOut', 'bendLines']
-    listNestCols = ['distOut', 'distInn', 'elevInn', 'elevOut']
-
-    listCols = listStrCols + listGeomCols + listNestCols
-
-    dfInc = str_to_list_comb(dfInc, listCols, listNestCols)
-    dfE   = expand_dataframe(dfInc.copy())
+    if input_file.suffix.lower() == ".parquet":
+        dfE = read_bend_table(input_file)
+    else:
+        df = pd.read_csv(input_file, dtype = {'include_flag': str, 'calculated': str})
+        dfE = prepare_bend_level_dataframe(df, file_stem=input_file.stem)
     
     print('Start saving:', output_file.name)
     dfE.to_csv(output_file, index=False)

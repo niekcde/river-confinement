@@ -1,0 +1,3 @@
+,continent,total_length,total_length_filtered,num_reaches,num_reaches_filtered,min_length,max_length,min_length_filtered,max_length_filtered,min_length_comb,max_length_comb,min_width_comb,max_width_comb,width_quantile95,max_width_quantile95
+0,Total,136789578,132281718,15089,12098,67,19996,80,19996,1477,194484,20,15726,989.2062499999959,1549.9155844155844
+1,oc,136789578,132281718,15089,12098,67,19996,80,19996,1477,194484,20,15726,989.2062499999959,1549.9155844155844

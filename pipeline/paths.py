@@ -27,7 +27,7 @@ def resolve_results_root(path_like: str | os.PathLike[str]) -> Path:
     path = Path(path_like).expanduser()
     if not path.is_absolute():
         path = (repo_root() / path).resolve()
-    if path.name == "results":
+    if path.name == "results" or path.name.startswith("results_"):
         return path
     return path / "results"
 
@@ -100,6 +100,10 @@ class ProjectPaths:
         return self.results_root / "profiles"
 
     @property
+    def bends_dir(self) -> Path:
+        return self.results_root / "bends"
+
+    @property
     def single_values_dir(self) -> Path:
         return self.results_root / "single_values"
 
@@ -142,6 +146,7 @@ class ProjectPaths:
             self.results_root,
             self.orthogonals_dir,
             self.profiles_dir,
+            self.bends_dir,
             self.all_dir,
             self.centerline_dir,
             self.cycles_dir,

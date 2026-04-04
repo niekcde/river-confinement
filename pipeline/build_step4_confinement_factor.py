@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .bend_io import read_bend_table
 from .paths import load_project_paths
 from .support import confinement_factor_single_values
 
@@ -38,17 +39,17 @@ def _discover_step4_inputs(paths, continent_input=None, conf_factor=50, input_fi
 
     conf_factor_str = _format_conf_factor(conf_factor)
     if continent_input is None:
-        files = sorted(paths.single_values_dir.glob(f"??_??_{conf_factor_str}.csv"))
+        files = sorted(paths.bends_dir.glob(f"??_??_{conf_factor_str}.parquet"))
     else:
-        files = sorted(paths.single_values_dir.glob(f"{continent_input}_??_{conf_factor_str}.csv"))
+        files = sorted(paths.bends_dir.glob(f"{continent_input}_??_{conf_factor_str}.parquet"))
 
     if len(files) == 0:
         if continent_input is None:
             raise FileNotFoundError(
-                f"No Step 3 files found in {paths.single_values_dir} for conf_factor {conf_factor_str}."
+                f"No bend-level Step 2 files found in {paths.bends_dir} for conf_factor {conf_factor_str}."
             )
         raise FileNotFoundError(
-            f"No Step 3 files found for continent '{continent_input}' in {paths.single_values_dir} "
+            f"No bend-level Step 2 files found for continent '{continent_input}' in {paths.bends_dir} "
             f"for conf_factor {conf_factor_str}."
         )
 
@@ -91,7 +92,7 @@ def build_step4_confinement_factor(
     else:
         resolved_inputs = [_resolve_path(paths, file_path) for file_path in input_files]
         if len(resolved_inputs) == 0:
-            raise FileNotFoundError("No Step 3 input files were provided for Step 4.")
+            raise FileNotFoundError("No bend-level Step 2 input files were provided for Step 4.")
         missing = [str(path) for path in resolved_inputs if path.exists() is False]
         if missing:
             raise FileNotFoundError(
@@ -106,16 +107,13 @@ def build_step4_confinement_factor(
         else:
             return output_file
 
-    width_frames = [
-        pd.read_csv(input_path, usecols=[width_column])
-        for input_path in resolved_inputs
-    ]
+    width_frames = [read_bend_table(input_path)[[width_column]] for input_path in resolved_inputs]
     if len(width_frames) == 0:
         raise FileNotFoundError("No width values were loaded for Step 4.")
 
     df_widths = pd.concat(width_frames, ignore_index=True)
     if df_widths.empty:
-        raise ValueError("Step 4 loaded zero bend-width rows from the available Step 3 files.")
+        raise ValueError("Step 4 loaded zero bend-width rows from the available bend-level Step 2 files.")
 
     df_factor = confinement_factor_single_values(df_widths, width_column, y1, y2)
     df_factor.to_csv(output_file, index=False)
@@ -124,7 +122,7 @@ def build_step4_confinement_factor(
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Step 4 entrypoint: build the confinement-factor lookup table from Step 3 outputs."
+        description="Step 4 entrypoint: build the confinement-factor lookup table from bend-level Step 2 outputs."
     )
     parser.add_argument("continent", nargs="?", help="Continent code to process, for example 'af' or 'oc'.")
     parser.add_argument(
@@ -139,7 +137,7 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--input-file",
-        help="Run Step 4 for one specific Step 3 CSV file instead of a whole continent batch.",
+        help="Run Step 4 for one specific bend-level Step 2 file instead of a whole continent batch.",
     )
     parser.add_argument(
         "--output-file",

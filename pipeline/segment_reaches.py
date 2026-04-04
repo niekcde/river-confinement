@@ -38,10 +38,14 @@ def _discover_input_pair(paths, continent: str) -> tuple[Path, Path]:
         )
 
     if len(vector_files) != 1 or len(node_files) != 1:
+        vector_list = "\n".join(f"- {path.name}" for path in vector_files) or "- none"
+        node_list = "\n".join(f"- {path.name}" for path in node_files) or "- none"
         raise ValueError(
-            f"Step 1 currently expects exactly one reach file and one node file per continent. "
-            f"Found {len(vector_files)} reach files and {len(node_files)} node files for '{continent}'. "
-            "The downstream pipeline still assumes Step 1 outputs are named like '{continent}_{group}_...'."
+            f"Step 1 expects exactly one reach file and one node file per continent.\n"
+            f"The configured input folders contain too many files for continent '{continent}'.\n"
+            f"Reach matches in {paths.swot_vector_dir}:\n{vector_list}\n"
+            f"Node matches in {paths.swot_nodes_dir}:\n{node_list}\n"
+            "Keep exactly one source reach file and one source node file per continent in the input folders."
         )
 
     return vector_files[0], node_files[0]

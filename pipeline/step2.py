@@ -298,7 +298,9 @@ def process_file(multi_input):
     import numpy as np
     import pandas as pd
 
-    from .sample_step2_profiles import PROFILE_COLUMNS, empty_profile_frame, sample_profiles_from_orthogonals_file
+    from .bend_io import write_bend_table
+    from .run_confinement_values import prepare_bend_level_dataframe
+    from .sample_step2_profiles import PROFILE_COLUMNS, empty_profile_frame, sample_profiles_dataframe_from_orthogonals_file
 
     file, conf_factor, config_path = multi_input
     geometry_data = _build_step2_geometry_data(file, conf_factor, config_path)
@@ -306,22 +308,19 @@ def process_file(multi_input):
     paths = geometry_data["paths"]
     df = geometry_data["df"]
     included_mask = geometry_data["included_mask"]
-    profile_path = geometry_data["profile_path"]
-
-    if profile_path.exists():
-        profile_path.unlink()
+    bend_path = paths.bends_dir / f"{geometry_data['file_stem']}.parquet"
+    if bend_path.exists():
+        bend_path.unlink()
 
     if geometry_data["orthogonal_written"]:
-        sample_profiles_from_orthogonals_file(
+        df_profiles = sample_profiles_dataframe_from_orthogonals_file(
             geometry_data["orthogonal_path"],
             conf_factor=conf_factor,
             config_path=config_path,
-            output_path=str(profile_path),
         )
     else:
-        empty_profile_frame().to_csv(profile_path, index=False)
+        df_profiles = empty_profile_frame()
 
-    df_profiles = pd.read_csv(profile_path)
     for column in [column for column in PROFILE_COLUMNS if column not in {"combined_reach_id", "sampling_code"}]:
         if column not in df.columns:
             df[column] = np.nan
@@ -341,8 +340,8 @@ def process_file(multi_input):
             + sampling_codes.loc[sampling_indices]
         )
 
-    file_name = f"{geometry_data['file_stem']}.csv"
-    df.to_csv(paths.all_dir / file_name, index=False)
+    df_bend = prepare_bend_level_dataframe(df, file_stem=geometry_data["file_stem"])
+    write_bend_table(df_bend, bend_path)
 
     print(
         f"Finish: {geometry_data['cont_name']}_{geometry_data['file_number']} with cross slope {conf_factor}, "
@@ -399,7 +398,7 @@ def run_results_cli(continent_input, number_of_processors, config_path=None, con
     paths = load_project_paths(config_path)
     ensure_main_dirs(paths)
 
-    remove_files = glob.glob(str(paths.all_dir / f"{continent_input}*_{conf_factor}.csv"))
+    remove_files = glob.glob(str(paths.bends_dir / f"{continent_input}*_{conf_factor}.parquet"))
     for remove_file in remove_files:
         os.remove(remove_file)
 

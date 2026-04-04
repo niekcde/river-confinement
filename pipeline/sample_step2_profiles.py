@@ -23,6 +23,7 @@ from .paths import load_project_paths
 
 PROFILE_COLUMNS = [
     "combined_reach_id",
+    "centerlineWkt",
     "elevOut",
     "elevInn",
     "distOut",
@@ -123,17 +124,16 @@ def _profile_output_path(paths, orthogonal_path: Path, output_path: str | None =
     return paths.profiles_dir / f"{orthogonal_path.stem}.csv"
 
 
-def sample_profiles_from_orthogonals_file(
+def sample_profiles_dataframe_from_orthogonals_file(
     orthogonal_path: str | Path,
     *,
     conf_factor: int | None = None,
     config_path: str | None = None,
-    output_path: str | None = None,
     slope_samples: int = 400,
     dem_fill_value: int = -9999,
     dem_projection: str = "EPSG:4326",
     max_cross_distance: int = 30000,
-) -> Path:
+) -> pd.DataFrame:
     paths = load_project_paths(config_path)
     paths.ensure_step2_dirs()
 
@@ -142,16 +142,13 @@ def sample_profiles_from_orthogonals_file(
         orthogonal_path = (paths.repo_root / orthogonal_path).resolve()
 
     resolved_conf_factor = _resolve_conf_factor(orthogonal_path, conf_factor)
-    profile_path = _profile_output_path(paths, orthogonal_path, output_path)
-    profile_path.parent.mkdir(parents=True, exist_ok=True)
 
     if orthogonal_path.exists() is False:
         raise FileNotFoundError(f"Orthogonal intermediate not found: {orthogonal_path}")
 
     orthogonals = gpd.read_file(orthogonal_path)
     if orthogonals.empty:
-        empty_profile_frame().to_csv(profile_path, index=False)
-        return profile_path
+        return empty_profile_frame()
 
     vrt_file = str(paths.fabdem_vrt)
     dem_vrt = gdal.Open(vrt_file)
@@ -163,8 +160,9 @@ def sample_profiles_from_orthogonals_file(
     profile_rows = []
     try:
         for combined_reach_id, group in orthogonals.groupby("combined_reach_id", sort=False):
-            line_out = line_inn = left_right = np.nan
+            line_out = line_inn = left_right = centerline_wkt = np.nan
             try:
+                centerline_wkt = _group_geometry(group, "centerline").wkt
                 group_local = group.to_crs(group["reach_crs"].dropna().iloc[0])
                 (
                     reach_crs,
@@ -197,6 +195,7 @@ def sample_profiles_from_orthogonals_file(
                 profile_rows.append(
                     {
                         "combined_reach_id": combined_reach_id,
+                        "centerlineWkt": centerline_wkt,
                         "elevOut": _serialize_profile_array(elev_out),
                         "elevInn": _serialize_profile_array(elev_inn),
                         "distOut": _serialize_profile_array(dist_out),
@@ -213,6 +212,7 @@ def sample_profiles_from_orthogonals_file(
                 profile_rows.append(
                     {
                         "combined_reach_id": combined_reach_id,
+                        "centerlineWkt": centerline_wkt,
                         "elevOut": np.nan,
                         "elevInn": np.nan,
                         "distOut": np.nan,
@@ -228,7 +228,39 @@ def sample_profiles_from_orthogonals_file(
     finally:
         dem_vrt = None
 
-    df_profiles = pd.DataFrame(profile_rows, columns=PROFILE_COLUMNS)
+    return pd.DataFrame(profile_rows, columns=PROFILE_COLUMNS)
+
+
+def sample_profiles_from_orthogonals_file(
+    orthogonal_path: str | Path,
+    *,
+    conf_factor: int | None = None,
+    config_path: str | None = None,
+    output_path: str | None = None,
+    slope_samples: int = 400,
+    dem_fill_value: int = -9999,
+    dem_projection: str = "EPSG:4326",
+    max_cross_distance: int = 30000,
+) -> Path:
+    paths = load_project_paths(config_path)
+    paths.ensure_step2_dirs()
+
+    orthogonal_path = Path(orthogonal_path).expanduser()
+    if not orthogonal_path.is_absolute():
+        orthogonal_path = (paths.repo_root / orthogonal_path).resolve()
+
+    profile_path = _profile_output_path(paths, orthogonal_path, output_path)
+    profile_path.parent.mkdir(parents=True, exist_ok=True)
+
+    df_profiles = sample_profiles_dataframe_from_orthogonals_file(
+        orthogonal_path,
+        conf_factor=conf_factor,
+        config_path=config_path,
+        slope_samples=slope_samples,
+        dem_fill_value=dem_fill_value,
+        dem_projection=dem_projection,
+        max_cross_distance=max_cross_distance,
+    )
     df_profiles.to_csv(profile_path, index=False)
     return profile_path
 
