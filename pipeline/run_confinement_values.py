@@ -40,6 +40,20 @@ def _value_for_bend(value, bend_index):
     return value
 
 
+def _normalize_bend_profile_value(value):
+    if isinstance(value, np.ndarray):
+        if value.size == 0:
+            return np.nan
+        return value.tolist()
+    if isinstance(value, list):
+        if len(value) == 0:
+            return np.nan
+        return value
+    if pd.isna(value):
+        return np.nan
+    return [value]
+
+
 def prepare_bend_level_dataframe(df, file_stem=None):
     dfInc = df[(df['include_flag'] == '0') & (df['calculated'] == '0')].copy()
     if dfInc.empty:
@@ -80,7 +94,10 @@ def prepare_bend_level_dataframe(df, file_stem=None):
         for bend_index in range(bend_count):
             bend_row = row_dict.copy()
             for col in listCols:
-                bend_row[col] = _value_for_bend(row_dict.get(col), bend_index)
+                bend_value = _value_for_bend(row_dict.get(col), bend_index)
+                if col in listNestCols:
+                    bend_value = _normalize_bend_profile_value(bend_value)
+                bend_row[col] = bend_value
             bend_row['bend_index'] = bend_index
             bend_rows.append(bend_row)
 
@@ -111,6 +128,57 @@ def _format_height_factor(hf):
     if hf < 10:
         hf_save = f"0{hf}"
     return hf_save
+
+
+def _normalize_scalar_like(value):
+    if isinstance(value, np.ndarray):
+        if value.size == 0:
+            return np.nan
+        if value.size == 1:
+            return _normalize_scalar_like(value.reshape(-1)[0])
+        return str(value.tolist())
+    if isinstance(value, (list, tuple)):
+        if len(value) == 0:
+            return np.nan
+        if len(value) == 1:
+            return _normalize_scalar_like(value[0])
+        return str(list(value))
+    return value
+
+
+def _prepare_step5_netcdf_dataframe(df):
+    # Keep only the scalar bend-level attributes used by Step 6/7.
+    keep_cols = [
+        'combined_reach_id', 'reach_id', 'up_reach_id',
+        'networkGraph', 'networkGroup', 'river_name',
+        'dn_connected_reach', 'up_connected_reach',
+        'rch_id_dn', 'rch_id_dn_orig', 'rch_id_up', 'rch_id_up_orig',
+        'combined_reach_up', 'combined_reach_dn',
+        'ER_inn', 'ER_out', 'slope_inn', 'slope_out',
+        'ER_left', 'ER_right', 'slope_left', 'slope_right',
+        'apex', 'catchment_position', 'bendWidths', 'bendMaxWidths',
+        'cp_height', 'cm_height', 'bendDistOut', 'max_dist_out', 'bendHeight',
+        'bendSin', 'sin', 'ang', 'conFactor', 'combined_reach_len', 'bendLen',
+    ]
+    available_cols = [col for col in keep_cols if col in df.columns]
+    df_nc = df[available_cols].copy()
+
+    for col in df_nc.columns:
+        if df_nc[col].dtype == 'object':
+            df_nc[col] = df_nc[col].apply(_normalize_scalar_like)
+
+    numeric_id_cols = [
+        'combined_reach_id', 'reach_id', 'up_reach_id',
+        'dn_connected_reach', 'up_connected_reach',
+        'rch_id_dn', 'rch_id_dn_orig', 'rch_id_up', 'rch_id_up_orig',
+        'combined_reach_up', 'combined_reach_dn',
+        'networkGraph', 'networkGroup',
+    ]
+    for col in numeric_id_cols:
+        if col in df_nc.columns:
+            df_nc[col] = pd.to_numeric(df_nc[col], errors='coerce')
+
+    return df_nc
 
 
 def _resolve_step5_paths(config_path=None, conf_factor=50):
@@ -269,10 +337,11 @@ def calc_confinement_values(df,fileName, returnDataframe, open_seperate = False,
 
 
     dfE = dfE.drop(['elevOut', 'elevInn', 'distOut', 
-                    'distInn', 'geometry', 'bendGeom'], axis = 1)
+                    'distInn', 'geometry', 'bendGeom'], axis = 1, errors='ignore')
     dfE['apex'] = dfE['apex'].astype('float64')
     # save nc File
-    dfIncX = dfE.to_xarray()
+    dfE_nc = _prepare_step5_netcdf_dataframe(dfE)
+    dfIncX = dfE_nc.to_xarray()
     ncFile = step5_paths["single_values_dir"] / f"{fileName}_{hfSave}_conf.nc"
     if ncFile.exists():
         ncFile.unlink()
@@ -296,7 +365,7 @@ def concat_nc_conf_files(cross = 50, hf = 2, config_path = None):
         for f in tqdm(files):
             dsTemp = xr.open_dataset(f)
             dsTemp['file'] = ('index', [c] * dsTemp.sizes['index'])
-            dsTemp = dsTemp.drop_vars(['infP', 'bendLines', 'apexP', 'lineInn', 'lineOut'])
+            dsTemp = dsTemp.drop_vars(['infP', 'bendLines', 'apexP', 'lineInn', 'lineOut'], errors='ignore')
 
             parts = Path(f).stem.split("_")
             dsTemp['file_cont'] = parts[0]

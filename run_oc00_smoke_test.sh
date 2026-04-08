@@ -8,28 +8,43 @@ if [[ $# -lt 1 ]]; then
 fi
 
 CONFIG_PATH="$1"
-VECTOR_FILE="results/new_segments/vector/oc_00_reach_new_segments.gpkg"
-BEND_FILE="results/bends/oc_00_50.parquet"
 
-echo
-echo "[1/8] Step 1.5 FABDEM index"
-python -m pipeline.build_fabdem_index --config "$CONFIG_PATH"
+PATH_OUTPUT="$(python - "$CONFIG_PATH" <<'PY'
+from pathlib import Path
+import sys
 
-echo
-echo "[2/8] Step 1 segmentation for oc"
-python -m pipeline.segment_reaches oc --workers 1 --config "$CONFIG_PATH"
+from pipeline.paths import load_project_paths
 
-echo
-echo "[3/8] Step 2 canonical bend-table build for oc_00"
-python -m pipeline.build_step2_results \
-  --vector-file "$VECTOR_FILE" \
-  --config "$CONFIG_PATH"
+config_path = sys.argv[1]
+paths = load_project_paths(config_path)
 
-echo
-echo "[4/8] Step 4 confinement-factor table from bend-level Step 2 output"
-python -m pipeline.build_step4_confinement_factor \
-  --input-file "$BEND_FILE" \
-  --config "$CONFIG_PATH"
+print(paths.new_segments_vector_dir / "oc_00_reach_new_segments.gpkg")
+print(paths.bends_dir / "oc_00_50.parquet")
+PY
+)"
+
+VECTOR_FILE="$(printf '%s\n' "$PATH_OUTPUT" | sed -n '1p')"
+BEND_FILE="$(printf '%s\n' "$PATH_OUTPUT" | sed -n '2p')"
+
+# echo
+# echo "[1/8] Step 1.5 FABDEM index"
+# python -m pipeline.build_fabdem_index --config "$CONFIG_PATH"
+
+# echo
+# echo "[2/8] Step 1 segmentation for oc"
+# python -m pipeline.segment_reaches oc --workers 1 --config "$CONFIG_PATH"
+
+# echo
+# echo "[3/8] Step 2 canonical bend-table build for oc_00"
+# python -m pipeline.build_step2_results \
+#   --vector-file "$VECTOR_FILE" \
+#   --config "$CONFIG_PATH"
+
+# echo
+# echo "[4/8] Step 4 confinement-factor table from bend-level Step 2 output"
+# python -m pipeline.build_step4_confinement_factor \
+#   --input-file "$BEND_FILE" \
+#   --config "$CONFIG_PATH"
 
 echo
 echo "[5/8] Step 5 confinement outputs for height factor 2"

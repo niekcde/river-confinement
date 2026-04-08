@@ -279,28 +279,46 @@ def confinement_ratio(intercept, width):
             ratio = 0.5
     return ratio
 
+
+def _clean_profile_pair(profile, distance):
+    if isinstance(profile, int):
+        return np.array([], dtype=float), np.array([], dtype=float)
+    if isinstance(distance, int):
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    try:
+        profile_arr = np.asarray(profile, dtype=float)
+        distance_arr = np.asarray(distance, dtype=float)
+    except Exception:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    if profile_arr.size == 0 or distance_arr.size == 0:
+        return np.array([], dtype=float), np.array([], dtype=float)
+
+    valid = (
+        np.isfinite(profile_arr)
+        & np.isfinite(distance_arr)
+        & (profile_arr != 99999)
+        & (distance_arr != 99999)
+    )
+    return profile_arr[valid], distance_arr[valid]
+
 def get_low_center_point(po, pi, cdo, cdi, width):
-    if (isinstance(po, int)) & (isinstance(pi, int)):
+    po, cdo = _clean_profile_pair(po, cdo)
+    pi, cdi = _clean_profile_pair(pi, cdi)
+
+    poRiv = po[cdo <= (width / 2)] if po.size else np.array([], dtype=float)
+    piRiv = pi[cdi <= (width / 2)] if pi.size else np.array([], dtype=float)
+
+    mins = []
+    if poRiv.size:
+        mins.append(np.min(poRiv))
+    if piRiv.size:
+        mins.append(np.min(piRiv))
+
+    if len(mins) == 0:
         return np.nan
-    elif (isinstance(po, list)) & (isinstance(pi, int)):
-        po  = np.array(po)
-        cdo = np.array(cdo)
-        poRiv = po[cdo <= (width / 2)]
-        return np.min(poRiv)
-    elif (isinstance(po, int)) & (isinstance(pi, list)):
-        pi  = np.asarray(pi)
-        cdi = np.asarray(cdi)
-        piRiv = pi[cdi <= (width / 2)]
-        return np.min(piRiv)
-    else:
-
-        po, pi   = np.array(po), np.asarray(pi)
-        cdo, cdi = np.array(cdo), np.asarray(cdi)
-
-        poRiv = po[cdo <= (width / 2)]
-        piRiv = pi[cdi <= (width / 2)]
-
-        return np.min([poRiv.min(), piRiv.min()])
+    return np.min(mins)
 
 # Function to convert mm to inches
 def mm_to_inch(mm):
@@ -373,20 +391,26 @@ def confinement_values(po, pi, cdo, cdi,widthW, widthT, factor):
     - ER Out/Inn: Ratio of valley edge intercept and river width for outer and inner bend
     """
 
-    centerPointHeight = get_low_center_point(po, pi, cdo, cdi, widthW)
+    po_clean, cdo_clean = _clean_profile_pair(po, cdo)
+    pi_clean, cdi_clean = _clean_profile_pair(pi, cdi)
+
+    centerPointHeight = get_low_center_point(po_clean, pi_clean, cdo_clean, cdi_clean, widthW)
+    if np.isnan(centerPointHeight):
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+
     confinementHeight = (widthW * factor) + centerPointHeight
 
-    if (isinstance(po, int)):
+    if po_clean.size == 0:
         poIntercept = slopeOut = EROut = np.nan
     else:
-        poIntercept = x_y_intercept(cdo, po, confinementHeight, widthW/2, True, centerPointHeight)
-        slopeOut    = confinement_slope(poIntercept, po, cdo, centerPointHeight, confinementHeight, widthW, False)
+        poIntercept = x_y_intercept(cdo_clean, po_clean, confinementHeight, widthW/2, True, centerPointHeight)
+        slopeOut    = confinement_slope(poIntercept, po_clean, cdo_clean, centerPointHeight, confinementHeight, widthW, False)
         EROut       = confinement_ratio(poIntercept, widthW)
-    if (isinstance(pi, int)):
+    if pi_clean.size == 0:
         piIntercept = slopeInn = ERInn = np.nan
     else:
-        piIntercept = x_y_intercept(cdi, pi, confinementHeight, widthW/2, True, centerPointHeight)
-        slopeInn    = confinement_slope(piIntercept, pi, cdi, centerPointHeight, confinementHeight, widthW, False)
+        piIntercept = x_y_intercept(cdi_clean, pi_clean, confinementHeight, widthW/2, True, centerPointHeight)
+        slopeInn    = confinement_slope(piIntercept, pi_clean, cdi_clean, centerPointHeight, confinementHeight, widthW, False)
         ERInn       = confinement_ratio(piIntercept, widthW)
         
 
