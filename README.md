@@ -1,308 +1,238 @@
-# river-morphology
-Code for analysing SWORD data and creating a different river morpohlogy metrics
+# river-confinement
 
-## Planned Target Structure
+Code for deriving river confinement metrics from SWORD river geometry and FABDEM elevation data.
 
-This section is the working reference for the cleanup/refactor. It describes the intended stable project structure, not the claim that every part is already fully implemented.
+## Status
 
-Target layout:
+The large refactor of the canonical pipeline is done.
 
-```text
-project/
-  code/
-    pipeline/
-    analysis/
-    old/
-  config/
-    paths.example.json
-    paths.local.json
-  input_created/
-    dem/
-      FAB_dem_vrt.vrt
-      FAB_dem_bounds.gpkg
-  results/
-    reference_tables/
-    new_segments/
-      vector/
-      node/
-      vector_cont/
-    orthogonals/
-    bends/
-    profiles/
-    all/
-    single_values/
-    reach_averaged/
-    single_smoothed/
-    logs/
-    tmp/
-  data/                     # optional
-  README.md
-  ISSUES.md
-  environment.yml
+For the active pipeline path:
+- Steps `1.5` through `8` are now config-driven through `pipeline/paths.py`
+- active code lives in [pipeline](/Users/6256481/Code/river-confinement/pipeline)
+- legacy or superseded code lives in [old](/Users/6256481/Code/river-confinement/old)
+
+What remains is mostly:
+- performance work
+- notebook cleanup
+- reduction of unnecessary intermediates
+- a few longer-term design changes tracked in [ISSUES.md](/Users/6256481/Code/river-confinement/ISSUES.md)
+
+Resolved refactor work is tracked in [RESOLVED_ISSUES.md](/Users/6256481/Code/river-confinement/RESOLVED_ISSUES.md).
+
+## Repository Layout
+
+- [pipeline](/Users/6256481/Code/river-confinement/pipeline): active pipeline code and the final-results notebook
+- [analysis](/Users/6256481/Code/river-confinement/analysis): additional analysis material
+- [old](/Users/6256481/Code/river-confinement/old): legacy code kept for reference
+- [config](/Users/6256481/Code/river-confinement/config): path config files
+- [results](/Users/6256481/Code/river-confinement/results): default generated outputs
+- [input_created](/Users/6256481/Code/river-confinement/input_created): derived DEM cache files such as the FABDEM VRT
+
+## Environment
+
+Create the environment with:
+
+```bash
+conda env create -f environment.yml
+conda activate test-orthogonals
 ```
 
-Design rules for this target structure:
-- `code/` holds repository code only
-- `pipeline/` holds active pipeline and final-workflow code
-- `analysis/` holds additional or currently unused analysis scripts and notebooks
-- `old/` holds legacy or redundant code
-- `results/` holds all generated outputs from the pipeline
-- `data/` is optional and should not be mandatory for running the code if shared project data already exists elsewhere
+`pyarrow` is required for the canonical Step 2 bend-table output.
 
-Data-location principle:
-- The code should support both a local project `data/` folder and an external shared data location
-- The preferred long-term mechanism is a small local config file where the user sets a few root paths once
-- The pipeline should then derive the rest of its paths from that config instead of hard-coded absolute paths
+## Configuration
 
-Planned path-config idea:
-- `config/paths.example.json` documents the expected keys
-- `config/paths.local.json` is user-specific and not intended as a shared hard-coded project path file
-- Typical keys will include a results root plus shared-data roots such as SWORD vectors, SWORD nodes, and FABDEM
+Create a local path config by copying [config/paths.example.json](/Users/6256481/Code/river-confinement/config/paths.example.json) to `config/paths.local.json`, or pass a config file explicitly on the CLI, or set `RIVER_CONFINEMENT_PATHS`.
 
-Current implementation status:
-- The canonical Steps 1 through 8 now use the shared path-config layer in `pipeline/paths.py`
-- `pipeline/select_raster.py` and the active path-setup cells in `pipeline/final_results.ipynb` now also use the shared project paths
-- `config/paths.local.json` is the intended user-specific override file and is gitignored
-- Remaining path cleanup is now mostly limited to older non-canonical helper functions and stale commented examples
+Example:
 
-Implementation note:
-- The physical top-level organization may move toward `code/`
-- The importable Python package should remain `pipeline`, not `code`, to avoid conflicts with Python's standard library `code` module
+```json
+{
+  "data_root": "./data",
+  "results_root": "./results",
+  "swot_vector_dir": "/Volumes/PhD/SWORD/v17/GPKG",
+  "swot_nodes_dir": "/Volumes/PhD/SWORD/v17/GPKG",
+  "fabdem_dir": "/Volumes/PhD/FABDEM",
+  "input_created_root": "./input_created"
+}
+```
 
-## Confinement pipeline audit
+Important path behavior:
+- `results_root` is the root for all generated pipeline outputs
+- `input_created_root` is the root for derived DEM cache files
+- the canonical pipeline does not require hard-coded `/Volumes/...` or `/scratch/...` paths in code anymore
 
-### Step 1: build segmented reach inputs and prerequisite tables
+## Canonical Pipeline
 
-Source of truth for this step is the active pipeline code in `pipeline/segment_reaches.py`, `pipeline/paths.py`, `pipeline/reach_definition.py`, and `pipeline/support.py`.
+The canonical pipeline stages are:
 
-The first pipeline step is now a dedicated segmentation entrypoint. The canonical Step 2 path later in `pipeline/build_step2_results.py` depends on outputs from this step, so the old Step 3 to Step 6 shell wrapper is not the start of the pipeline.
+1. Step `1.5`: build FABDEM VRT and bounds cache
+2. Step `1`: segment SWORD reaches and build reference tables
+3. Step `2`: build canonical bend-level Parquet tables
+4. Step `4`: build the confinement-factor lookup table
+5. Step `5`: compute per-file confinement outputs for a height factor
+6. Step `6`: aggregate Step 5 outputs by height factor
+7. Step `7`: spatially smooth the aggregated outputs
+8. Step `8`: run clustering analysis on the smoothed outputs
 
-Current Step 1 code path:
-- Run `python -m pipeline.segment_reaches [continents...]`
-- `pipeline/segment_reaches.py` -> `run_step1_segmentation(...)` -> `segment_continent(...)`
-- `pipeline/paths.py` loads `config/paths.local.json` when present, otherwise falls back to local `data/` or legacy `input/` locations
-- `segment_continent(...)` reads `{swot_vector_dir}/{continent}*17*gpkg` and `{swot_nodes_dir}/{continent}*17*gpkg`
-- For each vector/node pair it calls `new_reach_definition(..., save=True)`
-- `pipeline/segment_reaches.py` -> `build_step1_reference_tables(...)` rebuilds the prerequisite CSVs and continent-level segmented outputs
+Step `3` still exists, but only as a compatibility exporter from bend Parquet to the older CSV format. It is not required for the canonical path.
 
-Step 1 outputs written by code:
-- `results/new_segments/vector/{file}_{group}_reach_new_segments.gpkg`
-- `results/new_segments/node/{file}_{group}_node_new_segments.gpkg`
-- `results/reference_tables/SWORD_stats.csv`
-- `results/reference_tables/smoothingFactor.csv`
-- `results/reference_tables/file_sorting.csv`
-- `results/new_segments/vector_cont/{continent}_reaches.gpkg`
+### Step 1.5
 
-Notes from the code audit:
-- This first step now has its own stable entrypoint in `pipeline/segment_reaches.py`
-- `pipeline/main.py` is now only a compatibility wrapper that delegates to the canonical Step 2 entrypoint
-- There is no `.sh`, `.bash`, or `.zsh` pipeline entrypoint in this repository
-- The current Step 1 entrypoint explicitly validates that there is exactly one reach file and one node file per continent, because the downstream Step 2 filename logic expects outputs named like `{continent}_{group}_...`
+```bash
+python -m pipeline.build_fabdem_index --config config/paths.local.json
+```
 
-### Step 1.5: build the FABDEM VRT and bounds cache
-
-Source of truth for this step is the active pipeline code in `pipeline/build_fabdem_index.py`, `pipeline/paths.py`, and `pipeline/dem.py`.
-
-Current Step 1.5 code path:
-- Run `python -m pipeline.build_fabdem_index`
-- `pipeline/build_fabdem_index.py` loads the configured FABDEM source directory from `config/paths.local.json`
-- It collects all FABDEM GeoTIFF tiles from `{fabdem_dir}`
-- It builds the derived DEM cache files used later in the pipeline
-
-Step 1.5 outputs written by code:
+Writes:
 - `input_created/dem/FAB_dem_vrt.vrt`
 - `input_created/dem/FAB_dem_bounds.gpkg`
 
-Notes from the code audit:
-- This is now an explicit intermediate pipeline step instead of an undeclared prerequisite
-- The config is intended to store the source FABDEM directory, while the VRT and bounds paths are derived by the pipeline itself
-- Step 2 and later active DEM-dependent code now read the centralized `input_created/dem/FAB_dem_vrt.vrt` path
+### Step 1
 
-### Step 2: run the first confinement-metric pass on segmented reaches
+```bash
+python -m pipeline.segment_reaches af eu na sa as oc --workers 1 --config config/paths.local.json
+```
 
-Source of truth for this step is `pipeline/build_step2_results.py` together with the worker/orchestration helpers in `pipeline/step2.py`.
+Writes:
+- `results/new_segments/vector/{file}_{group}_reach_new_segments.gpkg`
+- `results/new_segments/node/{file}_{group}_node_new_segments.gpkg`
+- `results/new_segments/vector_cont/{continent}_reaches.gpkg`
+- `results/reference_tables/SWORD_stats.csv`
+- `results/reference_tables/smoothingFactor.csv`
+- `results/reference_tables/file_sorting.csv`
 
-Current Step 2 code path:
-- Run `python -m pipeline.build_step2_results {continent} {processors}`
-- `pipeline/build_step2_results.py` parses the CLI and calls `run_results_cli(...)` in `pipeline/step2.py`
-- `pipeline/step2.py` loads `results/reference_tables/file_sorting.csv`, filters rows for the requested continent, and builds the Step 2 file batch
-- `process_file(...)` in `pipeline/step2.py` opens the segmented reach/node files from Step 1, reads `results/reference_tables/smoothingFactor.csv`, and computes bend/confinement metrics plus orthogonal geometry
-- It writes a geometry intermediate to `results/orthogonals/{continent}_{file_id}_50.gpkg`
-- The geometry-only stage can now be run directly with `python -m pipeline.build_step2_orthogonals {continent} {processors}`
-- For single-file debugging, the geometry-only stage can also be run with `python -m pipeline.build_step2_orthogonals --vector-file results/new_segments/vector/{file}.gpkg`
-- For single-file debugging of the full canonical Step 2 path, run `python -m pipeline.build_step2_results --vector-file results/new_segments/vector/{file}.gpkg`
-- It then samples DEM profiles from the saved orthogonals through `pipeline/sample_step2_profiles.py`
-- `process_file(...)` in `pipeline/step2.py` builds the canonical bend-level Step 2 table in memory and writes it to Parquet
+### Step 2
 
-Step 2 outputs written by code:
-- `results/orthogonals/{continent}_{file_id}_50.gpkg`
-- `results/bends/{continent}_{file_id}_50.parquet`
+```bash
+python -m pipeline.build_step2_results af 4 --config config/paths.local.json
+```
 
-Notes from the code audit:
-- Step 2 depends on Step 1 outputs already existing, especially `results/new_segments/...` and `results/reference_tables/file_sorting.csv`
-- Step 2 also depends on Step 1.5 output `input_created/dem/FAB_dem_vrt.vrt`
-- The active code fixes `confFactor = 50` in the current canonical Step 2 CLI unless a different `--conf-factor` is passed
-- The current Step 2 implementation now pre-groups reach and node rows per `combined_reach_id` inside `pipeline/step2.py` to reduce repeated dataframe filtering within a file
-- The current Step 2 implementation now separates orthogonal-line geometry creation from DEM profile sampling inside `pipeline/get_orthogonals.py`
-- `pipeline/step2.py` now writes a real orthogonal intermediate and the canonical bend-level downstream table
-- The canonical bend-level builder now constructs one row per bend directly instead of relying on a later dataframe `explode(...)` step
-- The new geometry-only entrypoint in `pipeline/build_step2_orthogonals.py` allows Step 2 orthogonals to be tested independently from DEM sampling
-- The DEM-sampling stage can still be called directly with `python -m pipeline.sample_step2_profiles results/orthogonals/{file}.gpkg`, but that CSV output is now a debug/compatibility artifact rather than the canonical handoff
-- When Step 2 is run with `processors = 1`, the current code now runs sequentially instead of using a one-worker multiprocessing pool
-- Geometry-only Step 2 runs now clear only prior `results/orthogonals/*.gpkg` outputs
-- The canonical downstream handoff from Step 2 is now `results/bends/*.parquet`
-- The canonical bend-level path requires a Parquet engine such as `pyarrow`; `environment.yml` now includes that dependency
+For single-file debugging:
 
-### Step 3: export canonical bend tables to the legacy single_values CSV format
+```bash
+python -m pipeline.build_step2_results \
+  --vector-file results/new_segments/vector/af_00_reach_new_segments.gpkg \
+  --config config/paths.local.json
+```
 
-Source of truth for this compatibility step is `pipeline/build_step3_single_values.py` together with `create_apex_val_dataframe(...)` in `pipeline/run_confinement_values.py`.
+Writes:
+- `results/orthogonals/{file}_50.gpkg`
+- `results/bends/{file}_50.parquet`
 
-Current Step 3 code path:
-- Run `python -m pipeline.build_step3_single_values {continent} {processors}`
-- For single-file debugging, run `python -m pipeline.build_step3_single_values --input-file results/bends/{file}.parquet`
-- `pipeline/build_step3_single_values.py` discovers bend-level Step 2 files in `results/bends/`, ensures `results/single_values/` exists, and parallelizes the Step 3 worker
-- The worker calls `create_apex_val_dataframe(...)`
+The bend-level Parquet in `results/bends/` is the canonical downstream handoff.
 
-Transformation performed by code:
-- `create_apex_val_dataframe(...)` now reads the canonical bend-level Step 2 table when given a Parquet input
-- It writes the legacy `results/single_values/{file}.csv` export for compatibility with older expectations
+### Step 4
 
-Step 3 outputs written by code:
-- `results/single_values/{continent}_{file_id}_50.csv`
+```bash
+python -m pipeline.build_step4_confinement_factor --config config/paths.local.json
+```
 
-Notes from the code audit:
-- Step 3 now depends on canonical bend-level Step 2 outputs already existing in `results/bends/`
-- The canonical Step 3 path is now config-driven through `pipeline/paths.py`
-- `results/single_values/` is now created explicitly by the Step 3 helper before writes
-- Step 3 is now a compatibility exporter rather than a required transformation stage in the canonical pipeline path
-
-### Step 4: build the global confinement-factor lookup table
-
-Source of truth for this step is `pipeline/build_step4_confinement_factor.py` together with `confinement_factor_single_values(...)` in `pipeline/support.py`.
-
-Current Step 4 code path:
-- Run `python -m pipeline.build_step4_confinement_factor`
-- For a continent subset, run `python -m pipeline.build_step4_confinement_factor {continent}`
-- For single-file debugging, run `python -m pipeline.build_step4_confinement_factor --input-file results/bends/{file}.parquet`
-- `pipeline/build_step4_confinement_factor.py` discovers bend-level Step 2 files in `results/bends/`
-- It reads only the `bendWidths` column from those files
-- It calls `confinement_factor_single_values(df, 'bendWidths', 50, 10)`
-- It writes the result to `results/reference_tables/confinement_factor_50.csv`
-
-Transformation performed by code:
-- `confinement_factor_single_values(...)` computes a linearly scaled factor from `bendWidths`
-- It then inverts that value with `1 / cf`
-- The saved table contains `bendWidths` and `conFactor`
-
-Step 4 outputs written by code:
+Writes:
 - `results/reference_tables/confinement_factor_50.csv`
 
-Notes from the code audit:
-- Step 4 now depends directly on canonical Step 2 bend-level outputs in `results/bends/`
-- The canonical Step 4 path is now config-driven through `pipeline/paths.py`
-- The new Step 4 helper now fails with a clear file error when no bend-level Step 2 inputs are available
-- This lookup table is consumed in `pipeline/run_confinement_values.py` when later confinement values are computed
+### Step 5
 
-### Step 5: compute confinement outputs for each height factor
+```bash
+python -m pipeline.build_step5_confinement_outputs af 4 --height-factor 2 --config config/paths.local.json
+```
 
-Source of truth for this step is `pipeline/build_step5_confinement_outputs.py` together with `calc_confinement_values(...)` and `ER_slope_margin_values(...)` in `pipeline/run_confinement_values.py`.
+For single-file debugging:
 
-Current Step 5 code path:
-- Run `python -m pipeline.build_step5_confinement_outputs {continent} {processors} --height-factor {hf}`
-- For single-file debugging, run `python -m pipeline.build_step5_confinement_outputs --input-file results/bends/{file}.parquet --height-factor {hf}`
-- `pipeline/build_step5_confinement_outputs.py` discovers bend-level Step 2 files in `results/bends/`
-- It ensures `results/reach_averaged/` and the Step 5 `results/single_values/*_conf.*` output paths exist
-- The worker reads one `results/bends/{continent}_{file_id}_50.parquet` file and calls `calc_confinement_values(...)`
+```bash
+python -m pipeline.build_step5_confinement_outputs \
+  --input-file results/bends/af_00_50.parquet \
+  --height-factor 2 \
+  --config config/paths.local.json
+```
 
-Transformation performed by code:
-- `calc_confinement_values(...)` opens `input_created/dem/FAB_dem_vrt.vrt`
-- When reading a legacy CSV input, it converts nested list columns such as `distOut`, `distInn`, `elevInn`, and `elevOut` back from strings
-- `ER_slope_margin_values(...)` reads `results/reference_tables/confinement_factor_50.csv` through the shared path setup, assigns the nearest `conFactor` by `bendWidths`, and computes bend-scale confinement outputs
-- The canonical bend-level Step 2 path now carries `centerlineWkt`, so Step 5 can write reach-averaged geometry without relying on the previously broken placeholder `merge_centerlines(...)` call
-- The code then derives left/right ER and slope values from `LROrthog`
-- The output is saved once per input file and once per `heightFactor`
+Writes:
+- `results/reach_averaged/{file}_50_{hf}.gpkg`
+- `results/single_values/{file}_50_{hf}_conf.gpkg`
+- `results/single_values/{file}_50_{hf}_conf.nc`
 
-Step 5 outputs written by code:
-- `results/reach_averaged/{continent}_{file_id}_50_{hfSave}.gpkg`
-- `results/single_values/{continent}_{file_id}_50_{hfSave}_conf.gpkg`
-- `results/single_values/{continent}_{file_id}_50_{hfSave}_conf.nc`
+### Step 6
 
-Notes from the code audit:
-- Step 5 now depends directly on canonical Step 2 bend-level outputs, Step 4 output `results/reference_tables/confinement_factor_50.csv`, and `input_created/dem/FAB_dem_vrt.vrt`
-- The canonical Step 5 path is now config-driven through `pipeline/paths.py`
-- `results/reach_averaged/` is now created explicitly by the Step 5 helper before writes
-- The canonical Step 5 path now uses `centerlineWkt` from the bend table to populate reach-averaged geometry
-- The shell script immediately runs aggregation helpers after each `heightFactor`, but I am treating those as the next pipeline step
+```bash
+python -m pipeline.build_step6_aggregates --height-factor 2 --config config/paths.local.json
+```
 
-### Step 6: aggregate Step 5 outputs by height factor
+Writes:
+- `results/single_values/global_50_02_conf.nc`
+- `results/reach_averaged/{continent}_50_02_reachAveraged_conf.gpkg`
 
-Source of truth for this step is `pipeline/build_step6_aggregates.py` together with `concat_nc_conf_files(...)` and `concat_reachAveraged(...)` in `pipeline/run_confinement_values.py`.
+### Step 7
 
-Current Step 6 code path:
-- Run `python -m pipeline.build_step6_aggregates --height-factor {hf}`
-- `pipeline/build_step6_aggregates.py` calls `concat_nc_conf_files(...)` and `concat_reachAveraged(...)` for one `heightFactor`
+```bash
+python -m pipeline.build_step7_spatial_smoothing \
+  --height-factor 2 \
+  --workers 1 \
+  --continents af eu na sa as oc \
+  --config config/paths.local.json
+```
 
-Transformation performed by code:
-- `concat_nc_conf_files(...)` opens all per-file `*_conf.nc` outputs for a given `hf`, appends continent/file identifiers, drops several geometry-heavy variables, and concatenates them into one global dataset
-- `concat_reachAveraged(...)` opens all per-file reach-averaged GeoPackages for a given `hf`, appends file identifiers, and concatenates them into one continent-level GeoPackage
-
-Step 6 outputs written by code:
-- `results/single_values/global_50_{hf}_conf.nc`
-- `results/reach_averaged/{continent}_50_{hf}_reachAveraged_conf.gpkg`
-
-Notes from the code audit:
-- Step 6 depends on Step 5 outputs already existing for the requested `hf`
-- The canonical Step 6 path is now config-driven through `pipeline/paths.py`
-- The Step 6 helper now formats the requested `hf` consistently and fails with a clear file error when no Step 5 inputs are available
-- This is the last clearly visible stage of the unsmoothed confinement-output pipeline
-
-### Step 7: spatially smooth the aggregated global confinement dataset
-
-Source of truth for this step is `pipeline/build_step7_spatial_smoothing.py` together with `pipeline/spatial_smoothing.py` and `concat_nc_smooth_files(...)` in `pipeline/support.py`.
-
-Current Step 7 code path:
-- Run `python -m pipeline.build_step7_spatial_smoothing --height-factor {hf}`
-- `pipeline/spatial_smoothing.py` reads `results/single_values/global_50_{hf}_conf.nc` through the shared path setup
-- It derives additional normalized ER/slope variables from the global dataset
-- It runs `run_bend_smoothing(...)` per continent, with optional continent filtering and configurable workers
-- It writes one continent smoothed file per processed continent plus the corresponding `length_dict_{continent}.pkl`
-- It then calls `concat_nc_smooth_files(...)` to build the global smoothed dataset
-
-Transformation performed by code:
-- The script builds a bend-neighbor graph within each continent/network
-- It computes distance-weighted smoothed slope variables and smoothed standard deviations
-- It writes one smoothed NetCDF per continent and one combined global smoothed NetCDF
-
-Step 7 outputs written by code:
+Writes:
 - `results/single_smoothed/{continent}_50_{hf}_smoothed.nc`
 - `results/single_smoothed/length_dict_{continent}.pkl`
 - `results/single_smoothed/global_50_{hf}_smoothed.nc`
 
-Notes from the code audit:
-- This is part of the main pipeline because the smoothed outputs feed the clustering workflow and the final-results workflow
-- The canonical Step 7 path is now config-driven through `pipeline/paths.py`
-- `results/single_smoothed/` is now created explicitly by the Step 7 path before writes
-- The canonical Step 7-8 workflow now runs the required height-factor set together in `pipeline/build_step7_8_confinement_workflow.py`
+### Step 8
 
-### Step 8: run confinement clustering analysis on the smoothed dataset
+```bash
+python -m pipeline.build_step8_confinement_clustering \
+  --height-factors 2 3 4 \
+  --clusters 2 3 \
+  --sample-size 10 \
+  --workers 1 \
+  --config config/paths.local.json
+```
 
-Source of truth for this step is `pipeline/build_step8_confinement_clustering.py` together with `pipeline/clustering_confinement.py`.
-
-Current Step 8 code path:
-- Run `python -m pipeline.build_step8_confinement_clustering --height-factors 2 3 4`
-- `pipeline/clustering_confinement.py` reads `results/single_smoothed/global_50_{hf}_smoothed.nc` through the shared path setup
-- It filters to rows with complete normalized slope and smoothed-slope variables
-- It scales those variables, runs PCA, and then runs KMeans and GMM tuning over the requested cluster counts
-- It writes one KMeans score table and one GMM score table per requested height factor
-
-Visible outputs written by code:
+Writes:
 - `results/KmeanScores_confinement_{hf}.csv`
 - `results/GMMSCORES_confinement_{hf}.csv`
 
-Notes from the code audit:
-- This is part of the final analysis pipeline built on top of the smoothed confinement outputs
-- The canonical Step 8 path is now config-driven through `pipeline/paths.py`
-- The canonical Step 8 path now writes both KMeans and GMM tuning tables and no longer depends on the old undefined `comb` variable
-- The canonical Step 7-8 workflow can now smooth and cluster the required height-factor set together with `python -m pipeline.build_step7_8_confinement_workflow`
-- `pipeline/final_results.ipynb` imports clustering helpers and reads the smoothed `global_50_02_smoothed.nc` output, so the smoothing stage is not optional for the current final workflow
-- The active path-setup cells in `pipeline/final_results.ipynb` now point at the shared project paths instead of the older `/Volumes/...` layout
+### Combined Step 7-8 Workflow
+
+```bash
+python -m pipeline.build_step7_8_confinement_workflow \
+  --height-factors 2 3 4 \
+  --continents af eu na sa as oc \
+  --smoothing-workers 1 \
+  --clustering-workers 1 \
+  --clusters 2 3 \
+  --sample-size 10 \
+  --config config/paths.local.json
+```
+
+## Helper Scripts
+
+There are helper shell scripts in the repo root for smoke tests and larger runs:
+- [run_oc00_smoke_test.sh](/Users/6256481/Code/river-confinement/run_oc00_smoke_test.sh)
+- [run_continent_test.sh](/Users/6256481/Code/river-confinement/run_continent_test.sh)
+- [run_world_test.sh](/Users/6256481/Code/river-confinement/run_world_test.sh)
+
+These are developer convenience scripts, not the source of truth. The source of truth is the Python stage entrypoints listed above.
+
+## Main Outputs
+
+The most important canonical outputs are:
+- `results/bends/*.parquet`: canonical Step 2 bend tables
+- `results/reference_tables/confinement_factor_50.csv`: Step 4 lookup table
+- `results/single_values/global_50_{hf}_conf.nc`: aggregated unsmoothed confinement outputs
+- `results/single_smoothed/global_50_{hf}_smoothed.nc`: aggregated smoothed outputs used in later analysis
+
+## Final Notebook
+
+[pipeline/final_results.ipynb](/Users/6256481/Code/river-confinement/pipeline/final_results.ipynb) now uses the shared path setup and the canonical smoothed outputs, but it is still partly manual and still contains some exploratory analysis logic.
+
+For notebook runs, either:
+- set `RIVER_CONFINEMENT_PATHS` before launching Jupyter
+- or edit the config selection cell in the notebook header
+
+## What Is Still Open
+
+The main remaining work is tracked in [ISSUES.md](/Users/6256481/Code/river-confinement/ISSUES.md). At the moment that is mainly:
+- Step 2 performance
+- Step 7 performance
+- reducing large intermediate outputs
+- deciding on a canonical saved cluster-assignment output
+- cleaning up the final notebook further
+- a future move toward one global Parquet input instead of current Step 1 source discovery
