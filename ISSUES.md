@@ -1,6 +1,6 @@
 # Known Issues
 
-Resolved issues now live in [RESOLVED_ISSUES.md](/Users/6256481/Code/river-confinement/RESOLVED_ISSUES.md).
+Resolved issues now live in [RESOLVED_ISSUES.md](RESOLVED_ISSUES.md).
 
 ## 20. Replace segmented Step 1 source discovery with one global Parquet input
 

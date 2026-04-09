@@ -1,4 +1,4 @@
-name: test-orthogonals
+name: river_confinement
 channels:
   - conda-forge
 dependencies:

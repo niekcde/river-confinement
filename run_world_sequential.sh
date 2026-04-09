@@ -2,8 +2,8 @@
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: ./run_world_test.sh <config-path> [processors] [height-factors...]"
-  echo "Example: CONTINENTS='eu na sa as oc' ./run_world_test.sh config/paths.example_testing.json 4 2 3 4"
+  echo "Usage: ./run_world_sequential.sh <config-path> [processors] [height-factors...]"
+  echo "Example: CONTINENTS='eu na sa as oc' ./run_world_sequential.sh config/paths.example_testing.json 4 2 3 4"
   exit 1
 fi
 
@@ -30,7 +30,7 @@ echo "  continents: ${CONTINENT_LIST[*]}"
 echo "  height factors: ${HEIGHT_FACTORS[*]}"
 
 # echo
-# echo "[1/8] Step 1.5 FABDEM index"
+# echo "[1/8] Step 0.5 FABDEM index"
 # python -m pipeline.build_fabdem_index --config "$CONFIG_PATH"
 
 # echo

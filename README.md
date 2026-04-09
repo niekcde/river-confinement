@@ -2,31 +2,14 @@
 
 Code for deriving river confinement metrics from SWORD river geometry and FABDEM elevation data.
 
-## Status
-
-The large refactor of the canonical pipeline is done.
-
-For the active pipeline path:
-- Steps `1.5` through `8` are now config-driven through `pipeline/paths.py`
-- active code lives in [pipeline](/Users/6256481/Code/river-confinement/pipeline)
-- legacy or superseded code lives in [old](/Users/6256481/Code/river-confinement/old)
-
-What remains is mostly:
-- performance work
-- notebook cleanup
-- reduction of unnecessary intermediates
-- a few longer-term design changes tracked in [ISSUES.md](/Users/6256481/Code/river-confinement/ISSUES.md)
-
-Resolved refactor work is tracked in [RESOLVED_ISSUES.md](/Users/6256481/Code/river-confinement/RESOLVED_ISSUES.md).
-
 ## Repository Layout
 
-- [pipeline](/Users/6256481/Code/river-confinement/pipeline): active pipeline code and the final-results notebook
-- [analysis](/Users/6256481/Code/river-confinement/analysis): additional analysis material
-- [old](/Users/6256481/Code/river-confinement/old): legacy code kept for reference
-- [config](/Users/6256481/Code/river-confinement/config): path config files
-- [results](/Users/6256481/Code/river-confinement/results): default generated outputs
-- [input_created](/Users/6256481/Code/river-confinement/input_created): derived DEM cache files such as the FABDEM VRT
+- [pipeline](pipeline/): active pipeline code and the final-results notebook
+- [analysis](analysis/): additional analysis material
+- [old](old/): legacy code kept for reference
+- [config](config/): path config files
+- [results](results/): default generated outputs
+- [input_created](input_created/): derived DEM cache files such as the FABDEM VRT
 
 ## Environment
 
@@ -34,14 +17,12 @@ Create the environment with:
 
 ```bash
 conda env create -f environment.yml
-conda activate test-orthogonals
+conda activate river_confinement
 ```
-
-`pyarrow` is required for the canonical Step 2 bend-table output.
 
 ## Configuration
 
-Create a local path config by copying [config/paths.example.json](/Users/6256481/Code/river-confinement/config/paths.example.json) to `config/paths.local.json`, or pass a config file explicitly on the CLI, or set `RIVER_CONFINEMENT_PATHS`.
+Create a local path config by copying [config/paths.example.json](config/paths.example.json) to `config/paths.local.json`, or pass a config file explicitly on the CLI, or set `RIVER_CONFINEMENT_PATHS`.
 
 Example:
 
@@ -59,13 +40,11 @@ Example:
 Important path behavior:
 - `results_root` is the root for all generated pipeline outputs
 - `input_created_root` is the root for derived DEM cache files
-- the canonical pipeline does not require hard-coded `/Volumes/...` or `/scratch/...` paths in code anymore
 
 ## Canonical Pipeline
 
 The canonical pipeline stages are:
-
-1. Step `1.5`: build FABDEM VRT and bounds cache
+1. Step `0.5`: build FABDEM VRT and bounds cache
 2. Step `1`: segment SWORD reaches and build reference tables
 3. Step `2`: build canonical bend-level Parquet tables
 4. Step `4`: build the confinement-factor lookup table
@@ -76,7 +55,7 @@ The canonical pipeline stages are:
 
 Step `3` still exists, but only as a compatibility exporter from bend Parquet to the older CSV format. It is not required for the canonical path.
 
-### Step 1.5
+### Step 0.5
 
 ```bash
 python -m pipeline.build_fabdem_index --config config/paths.local.json
@@ -205,9 +184,9 @@ python -m pipeline.build_step7_8_confinement_workflow \
 ## Helper Scripts
 
 There are helper shell scripts in the repo root for smoke tests and larger runs:
-- [run_oc00_smoke_test.sh](/Users/6256481/Code/river-confinement/run_oc00_smoke_test.sh)
-- [run_continent_test.sh](/Users/6256481/Code/river-confinement/run_continent_test.sh)
-- [run_world_test.sh](/Users/6256481/Code/river-confinement/run_world_test.sh)
+- [run_oc00_smoke_test.sh](run_oc00_smoke_test.sh)
+- [run_continent_test.sh](run_continent_test.sh)
+- [run_world_sequential.sh](run_world_sequential.sh)
 
 These are developer convenience scripts, not the source of truth. The source of truth is the Python stage entrypoints listed above.
 
@@ -221,7 +200,7 @@ The most important canonical outputs are:
 
 ## Final Notebook
 
-[pipeline/final_results.ipynb](/Users/6256481/Code/river-confinement/pipeline/final_results.ipynb) now uses the shared path setup and the canonical smoothed outputs, but it is still partly manual and still contains some exploratory analysis logic.
+[pipeline/final_results.ipynb](pipeline/final_results.ipynb) uses the shared path setup and the canonical smoothed outputs. It still runs as a notebook workflow, but the main path assumptions have been cleaned up.
 
 For notebook runs, either:
 - set `RIVER_CONFINEMENT_PATHS` before launching Jupyter
@@ -229,7 +208,7 @@ For notebook runs, either:
 
 ## What Is Still Open
 
-The main remaining work is tracked in [ISSUES.md](/Users/6256481/Code/river-confinement/ISSUES.md). At the moment that is mainly:
+The main remaining work is tracked in [ISSUES.md](ISSUES.md). At the moment that is mainly:
 - Step 2 performance
 - Step 7 performance
 - reducing large intermediate outputs
