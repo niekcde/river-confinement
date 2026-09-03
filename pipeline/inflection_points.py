@@ -565,7 +565,15 @@ def inflection_points_curve(line:"shapely.LineString",
             pos1 = np.where(curveChanges == ti[ip])[0]
             pos2 = np.where(curveChanges == ti[ip+1])[0]
             
-            if ip == (lenApex-1):
+            if Point(p1).equals(Point(coords[0])):
+                # There is no preceding bend when a straight candidate begins
+                # at the physical reach start. Consecutive initial candidates
+                # can also be straight, so retain the reach start until a
+                # following bend is reached; never wrap to infCoords[-1].
+                infCoords[ip+1] = p1
+                removeInd.append(ip)
+                continue
+            elif ip == (lenApex-1):
                 newPos = pos2[0]
             else:
                 newPos = int((pos1+pos2) / 2)
@@ -579,7 +587,7 @@ def inflection_points_curve(line:"shapely.LineString",
              amplitude, bendCurvature, segmentSign, 
              apexP, apexPO) = arcVals(infCoords[ip-1] , newCoord, line, dfR, dfNodeR, True)
 
-            ip = 0 if ip == 0 else ip-1
+            ip = ip-1
         # print(ip, amplitude,int(bendWidth), int(bendMaxWidth), segmentSign, segmentSign == 0,(lenApex > 2))
         # print()
         #####################
