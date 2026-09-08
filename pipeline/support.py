@@ -936,18 +936,22 @@ def node_position(line, dfN):
 
 def adjust_new_segments(df):
     """Change values that are saved as str but should be lists"""
+    # Parsed reach IDs can be lists or integers, which string dtypes reject.
+    for t in ['', '_orig']:
+        for side in ['up', 'dn']:
+            column = f'rch_id_{side}{t}'
+            df[column] = df[column].astype(object)
     for i, r in df.iterrows():
         for t in ['', '_orig']:
             for side in ['up', 'dn']:
                 rch = r[f'rch_id_{side}{t}']
                 # print(rch)
-                if (rch == 'nan') or (isinstance(rch, float)):
+                if isinstance(rch, list):
+                    continue
+                elif pd.isna(rch) or isinstance(rch, float) or rch == 'nan':
                     # print('\tnan')
                     rch = np.nan
-                elif isinstance(rch, list):
-                    # print('\tlist')
-                    continue
-                else:
+                elif isinstance(rch, str):
                     # print('\tstring', rch, rch == 'nan', type(rch))
                     rch = ast.literal_eval(rch)
                 # print(rch)

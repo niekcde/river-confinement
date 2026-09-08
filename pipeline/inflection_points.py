@@ -576,7 +576,7 @@ def inflection_points_curve(line:"shapely.LineString",
             elif ip == (lenApex-1):
                 newPos = pos2[0]
             else:
-                newPos = int((pos1+pos2) / 2)
+                newPos = (pos1.item() + pos2.item()) // 2
 
             newCoord = coords[curveChanges[newPos]]
             infCoords[ip+1] = newCoord
