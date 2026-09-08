@@ -10,6 +10,8 @@ Code for deriving river confinement metrics from SWORD river geometry and FABDEM
 - [config](config/): path config files
 - [results](results/): default generated outputs
 - [input_created](input_created/): derived DEM cache files such as the FABDEM VRT
+- [docs/vbet_validation.md](docs/vbet_validation.md): pilot workflow for the
+  independent VBET valley-bottom-width comparison
 
 ## Environment
 
