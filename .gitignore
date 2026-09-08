@@ -7,3 +7,8 @@ input_created*/
 .history/
 pipeline/**/.tmp*
 Pipeline/__pychache__
+
+# Local datasets and outputs (also ignore external-drive symlinks).
+/data
+/results
+/pipeline/.tmp
