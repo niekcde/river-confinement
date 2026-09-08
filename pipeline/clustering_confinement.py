@@ -9,6 +9,7 @@ if __package__ in (None, ""):
 
 import argparse
 import itertools
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -37,11 +38,11 @@ def _score_output_files(paths, height_factor):
     }
 
 
-def open_dataset_confinement_clustering(height_factor, *, cross_factor=50, config_path=None):
+def open_dataset_confinement_clustering(height_factor, *, cross_factor=50, config_path=None, input_dir=None):
     paths = load_project_paths(config_path)
     cross_token = format_factor_token(cross_factor)
     hf_token = format_factor_token(height_factor)
-    input_file = paths.single_smoothed_dir / f"global_{cross_token}_{hf_token}_smoothed.nc"
+    input_file = (Path(input_dir) if input_dir is not None else paths.single_smoothed_dir) / f"global_{cross_token}_{hf_token}_smoothed.nc"
     if input_file.exists() is False:
         raise FileNotFoundError(
             f"Step 8 input file not found at {input_file}. "
@@ -192,6 +193,8 @@ def run_confinement_clustering(
     sample_size=40000,
     random_states=DEFAULT_RANDOM_STATES,
     workers=1,
+    input_dir=None,
+    output_dir=None,
 ):
     paths = load_project_paths(config_path)
     paths.results_root.mkdir(parents=True, exist_ok=True)
@@ -202,10 +205,14 @@ def run_confinement_clustering(
             height_factor,
             cross_factor=cross_factor,
             config_path=config_path,
+            input_dir=input_dir,
         )
         df_cluster, cluster_cols = prepare_confinement_clustering_dataframe(df)
         valid_clusters = _validate_clusters(clusters, len(df_cluster))
         output_files = _score_output_files(paths, height_factor)
+        if output_dir is not None:
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            output_files = {key: Path(output_dir) / value.name for key, value in output_files.items()}
 
         kmeans_scores = run_kmeans_scores(
             df_cluster,
@@ -246,6 +253,8 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Step 8 entrypoint: run confinement clustering on the smoothed dataset."
     )
+    parser.add_argument('--input-dir', type=Path)
+    parser.add_argument('--output-dir', type=Path)
     parser.add_argument(
         "--config",
         help="Path to config/paths.local.json. Defaults to config/paths.local.json when present.",
@@ -302,6 +311,8 @@ def main_cli(argv=None):
         sample_size=args.sample_size,
         random_states=args.random_states,
         workers=args.workers,
+        input_dir=args.input_dir,
+        output_dir=args.output_dir,
     )
 
 

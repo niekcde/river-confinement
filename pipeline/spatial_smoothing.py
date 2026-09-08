@@ -8,6 +8,7 @@ if __package__ in (None, ""):
     __package__ = "pipeline"
 
 import argparse
+import json
 import pickle
 from datetime import datetime as dt
 from functools import partial
@@ -21,7 +22,7 @@ import xarray as xr
 from tqdm import tqdm
 
 from .paths import format_factor_token, load_project_paths
-from .support import concat_nc_smooth_files
+from .local_bend_smoothing import prepare_bends, smooth_local
 
 
 def create_multiprocess_iterator(df):
@@ -165,11 +166,23 @@ def smooth_attributes(sid, attr, length_dict, df, max_dist=20000, max_neighbors=
     return np.concatenate([wmean, wstd])
 
 
-def run_bend_smoothing(cont, df, *, single_smoothed_dir, cross_token, hf_token):
+def run_bend_smoothing(cont, df, *, single_smoothed_dir, cross_token, hf_token,
+                       method='legacy', neighbors=3, alpha=0.75, length_floor=True):
     print('Run bend Smoothing', cont)
     df = df.copy()
     if df.empty:
         return None
+
+    if method == 'local':
+        df = smooth_local(prepare_bends(df), neighbors=neighbors, alpha=alpha, length_floor=length_floor)
+        ds = df.to_xarray()
+        ds.attrs.update(smoothing_method='directional_gaussian', neighbors_per_direction=neighbors,
+                        smoothing_alpha=alpha, smoothing_length_floor=int(length_floor))
+        nc_file = single_smoothed_dir / f'{cont}_{cross_token}_{hf_token}_smoothed.nc'
+        ds.to_netcdf(nc_file)
+        return nc_file
+    if method != 'legacy':
+        raise ValueError(f'Unknown smoothing method: {method}')
 
     df['bendRank'] = df.groupby('combined_reach_id')['bendDistOut'].rank(ascending=False).astype(int)
     df['bendID'] = df['combined_reach_id'].astype(int).astype(str) + '_' + df['bendRank'].astype(str)
@@ -197,13 +210,14 @@ def run_bend_smoothing(cont, df, *, single_smoothed_dir, cross_token, hf_token):
 
 
 def _run_bend_smoothing_task(task):
-    cont, df_cont, single_smoothed_dir, cross_token, hf_token = task
+    cont, df_cont, single_smoothed_dir, cross_token, hf_token, options = task
     return run_bend_smoothing(
         cont,
         df_cont,
         single_smoothed_dir=single_smoothed_dir,
         cross_token=cross_token,
         hf_token=hf_token,
+        **options,
     )
 
 
@@ -247,9 +261,21 @@ def _prepare_smoothing_dataframe(ds):
     return df
 
 
-def run_spatial_smoothing(*, cross_factor=50, height_factor=2, config_path=None, workers=6, continents=None):
+def run_spatial_smoothing(*, cross_factor=50, height_factor=2, config_path=None, workers=6, continents=None,
+                         method='legacy', neighbors=3, alpha=0.75, length_floor=True, output_dir=None):
     paths = load_project_paths(config_path)
-    paths.ensure_step7_dirs()
+    if method == 'local' and output_dir is None:
+        raise ValueError('Local smoothing requires a separate --output-dir until a final setting is selected')
+    destination = Path(output_dir) if output_dir is not None else paths.single_smoothed_dir
+    if method == 'local' and destination.resolve() == paths.single_smoothed_dir.resolve():
+        raise ValueError('Use an experiment directory to preserve the production baseline')
+    destination.mkdir(parents=True, exist_ok=True)
+    settings = dict(method=method, neighbors=neighbors, alpha=alpha, length_floor=length_floor)
+    if output_dir is not None:
+        manifest = destination / 'smoothing_settings.json'
+        if manifest.exists() and json.loads(manifest.read_text()) != settings:
+            raise ValueError('Output directory already belongs to a different smoothing configuration')
+        manifest.write_text(json.dumps(settings, indent=2))
 
     cross_token = format_factor_token(cross_factor)
     hf_token = format_factor_token(height_factor)
@@ -260,8 +286,8 @@ def run_spatial_smoothing(*, cross_factor=50, height_factor=2, config_path=None,
             "Run Step 6 aggregation first."
         )
 
-    ds = xr.open_dataset(input_file)
-    df = _prepare_smoothing_dataframe(ds)
+    with xr.open_dataset(input_file) as ds:
+        df = _prepare_smoothing_dataframe(ds)
 
     available_continents = [c for c in ['oc', 'as', 'sa', 'af', 'eu', 'na'] if c in set(df['file'].dropna())]
     if continents is None or len(continents) == 0:
@@ -275,7 +301,8 @@ def run_spatial_smoothing(*, cross_factor=50, height_factor=2, config_path=None,
         )
 
     tasks = [
-        (cont, df[df['file'] == cont].copy(), paths.single_smoothed_dir, cross_token, hf_token)
+        (cont, df[df['file'] == cont].copy(), destination, cross_token, hf_token,
+         dict(method=method, neighbors=neighbors, alpha=alpha, length_floor=length_floor))
         for cont in target_continents
     ]
 
@@ -288,11 +315,14 @@ def run_spatial_smoothing(*, cross_factor=50, height_factor=2, config_path=None,
             continent_outputs = pool.map(_run_bend_smoothing_task, tasks)
 
     print(f'Create nodes and edges finished: {dt.now() - dt1}')
-    global_output = concat_nc_smooth_files(
-        cross=cross_factor,
-        hf=height_factor,
-        config_path=config_path,
-    )
+    # Concatenate only files produced by this invocation, never stale continents.
+    datasets = [xr.open_dataset(output) for output in continent_outputs if output is not None]
+    global_output = destination / f'global_{cross_token}_{hf_token}_smoothed.nc'
+    try:
+        xr.concat(datasets, dim='index').to_netcdf(global_output)
+    finally:
+        for dataset in datasets:
+            dataset.close()
     return {
         'continent_outputs': [output for output in continent_outputs if output is not None],
         'global_output': global_output,
@@ -303,6 +333,11 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description='Step 7 entrypoint: spatially smooth the aggregated confinement dataset.'
     )
+    parser.add_argument('--method', choices=['legacy', 'local'], default='legacy')
+    parser.add_argument('--neighbors-per-direction', type=int, default=3)
+    parser.add_argument('--alpha', type=float, default=0.75)
+    parser.add_argument('--length-floor', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--output-dir', type=Path, help='Separate directory for this smoothing configuration')
     parser.add_argument(
         '--config',
         help='Path to config/paths.local.json. Defaults to config/paths.local.json when present.',
@@ -341,6 +376,11 @@ def main_cli(argv=None):
         config_path=args.config,
         workers=args.workers,
         continents=args.continents,
+        method=args.method,
+        neighbors=args.neighbors_per_direction,
+        alpha=args.alpha,
+        length_floor=args.length_floor,
+        output_dir=args.output_dir,
     )
 
 

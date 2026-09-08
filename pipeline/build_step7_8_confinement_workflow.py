@@ -8,6 +8,7 @@ if __package__ in (None, ""):
     __package__ = "pipeline"
 
 import argparse
+from pathlib import Path
 
 from .clustering_confinement import (
     DEFAULT_CLUSTERS,
@@ -29,6 +30,11 @@ def run_step7_8_confinement_workflow(
     clusters=DEFAULT_CLUSTERS,
     sample_size=40000,
     random_states=DEFAULT_RANDOM_STATES,
+    method='legacy',
+    neighbors=3,
+    alpha=0.75,
+    length_floor=True,
+    output_dir=None,
 ):
     smoothing_outputs = []
     for height_factor in height_factors:
@@ -39,6 +45,9 @@ def run_step7_8_confinement_workflow(
                 config_path=config_path,
                 workers=smoothing_workers,
                 continents=continents,
+                method=method, neighbors=neighbors, alpha=alpha,
+                length_floor=length_floor,
+                output_dir=Path(output_dir) / 'single_smoothed' if output_dir is not None else None,
             )
         )
 
@@ -50,6 +59,8 @@ def run_step7_8_confinement_workflow(
         sample_size=sample_size,
         random_states=random_states,
         workers=clustering_workers,
+        input_dir=Path(output_dir) / 'single_smoothed' if output_dir is not None else None,
+        output_dir=output_dir,
     )
 
     return {
@@ -62,6 +73,11 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Step 7-8 workflow: smooth and cluster the required confinement height factors together."
     )
+    parser.add_argument('--method', choices=['legacy', 'local'], default='legacy')
+    parser.add_argument('--neighbors-per-direction', type=int, default=3)
+    parser.add_argument('--alpha', type=float, default=0.75)
+    parser.add_argument('--length-floor', action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument('--output-dir', type=Path)
     parser.add_argument(
         "--config",
         help="Path to config/paths.local.json. Defaults to config/paths.local.json when present.",
@@ -131,6 +147,8 @@ def main_cli(argv=None):
         clusters=args.clusters,
         sample_size=args.sample_size,
         random_states=args.random_states,
+        method=args.method, neighbors=args.neighbors_per_direction,
+        alpha=args.alpha, length_floor=args.length_floor, output_dir=args.output_dir,
     )
 
 
