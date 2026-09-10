@@ -210,6 +210,13 @@ For notebook runs, either:
 
 ## What Is Still Open
 
+For a quick bend-to-reach sensitivity check, use
+[analysis/reach_scale_confinement.ipynb](analysis/reach_scale_confinement.ipynb).
+It aggregates by `file` and `combined_reach_id`, retains coverage and within-reach
+variability, and compares distributions and width/elevation patterns without
+refitting clusters. Its input cell defaults to the manuscript archive; edit
+`INPUT_OVERRIDE` to use another dataset.
+
 The main remaining work is tracked in [ISSUES.md](ISSUES.md). At the moment that is mainly:
 - Step 2 performance
 - Step 7 performance
