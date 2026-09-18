@@ -152,8 +152,14 @@ python -m pipeline.build_step7_spatial_smoothing \
 
 Writes:
 - `results/single_smoothed/{continent}_50_{hf}_smoothed.nc`
-- `results/single_smoothed/length_dict_{continent}.pkl`
 - `results/single_smoothed/global_50_{hf}_smoothed.nc`
+
+Step 7 defaults to local directional smoothing (three neighbors per direction,
+alpha 0.75, length floor enabled). `smoothing_settings.json` in the output
+directory records these settings and prevents mixing configurations. Use
+`--method legacy --output-dir <separate-directory>` only for baseline checks.
+Canonical Step 7 runs must include all continents; use `--output-dir` for a
+subset so the global file remains complete.
 
 ### Step 8
 
@@ -199,6 +205,14 @@ The most important canonical outputs are:
 - `results/reference_tables/confinement_factor_50.csv`: Step 4 lookup table
 - `results/single_values/global_50_{hf}_conf.nc`: aggregated unsmoothed confinement outputs
 - `results/single_smoothed/global_50_{hf}_smoothed.nc`: aggregated smoothed outputs used in later analysis
+
+## Source–Bypass–Sink Comparison
+
+[docs/source_sink.md](docs/source_sink.md) documents the Martin & Lamb (2025)
+routing-zone comparison. Use `python -m analysis.source_sink_summary` to reuse
+saved bend assignments for statistics and the figure. The separate
+`python -m analysis.source_sink` commands prepare vectors or explicitly run a
+new raster overlay. This optional analysis is separate from pipeline Steps 1–8.
 
 ## Final Notebook
 
