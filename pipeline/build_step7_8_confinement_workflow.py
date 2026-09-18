@@ -30,7 +30,7 @@ def run_step7_8_confinement_workflow(
     clusters=DEFAULT_CLUSTERS,
     sample_size=40000,
     random_states=DEFAULT_RANDOM_STATES,
-    method='legacy',
+    method='local',
     neighbors=3,
     alpha=0.75,
     length_floor=True,
@@ -73,7 +73,7 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description="Step 7-8 workflow: smooth and cluster the required confinement height factors together."
     )
-    parser.add_argument('--method', choices=['legacy', 'local'], default='legacy')
+    parser.add_argument('--method', choices=['legacy', 'local'], default='local')
     parser.add_argument('--neighbors-per-direction', type=int, default=3)
     parser.add_argument('--alpha', type=float, default=0.75)
     parser.add_argument('--length-floor', action=argparse.BooleanOptionalAction, default=True)

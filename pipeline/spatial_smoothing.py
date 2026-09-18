@@ -167,7 +167,7 @@ def smooth_attributes(sid, attr, length_dict, df, max_dist=20000, max_neighbors=
 
 
 def run_bend_smoothing(cont, df, *, single_smoothed_dir, cross_token, hf_token,
-                       method='legacy', neighbors=3, alpha=0.75, length_floor=True):
+                       method='local', neighbors=3, alpha=0.75, length_floor=True):
     print('Run bend Smoothing', cont)
     df = df.copy()
     if df.empty:
@@ -262,19 +262,19 @@ def _prepare_smoothing_dataframe(ds):
 
 
 def run_spatial_smoothing(*, cross_factor=50, height_factor=2, config_path=None, workers=6, continents=None,
-                         method='legacy', neighbors=3, alpha=0.75, length_floor=True, output_dir=None):
+                         method='local', neighbors=3, alpha=0.75, length_floor=True, output_dir=None):
     paths = load_project_paths(config_path)
-    if method == 'local' and output_dir is None:
-        raise ValueError('Local smoothing requires a separate --output-dir until a final setting is selected')
     destination = Path(output_dir) if output_dir is not None else paths.single_smoothed_dir
-    if method == 'local' and destination.resolve() == paths.single_smoothed_dir.resolve():
-        raise ValueError('Use an experiment directory to preserve the production baseline')
     destination.mkdir(parents=True, exist_ok=True)
     settings = dict(method=method, neighbors=neighbors, alpha=alpha, length_floor=length_floor)
-    if output_dir is not None:
-        manifest = destination / 'smoothing_settings.json'
-        if manifest.exists() and json.loads(manifest.read_text()) != settings:
+    manifest = destination / 'smoothing_settings.json'
+    if manifest.exists():
+        if json.loads(manifest.read_text()) != settings:
             raise ValueError('Output directory already belongs to a different smoothing configuration')
+    else:
+        existing = list(destination.glob('*_smoothed.nc')) + list(destination.glob('length_dict_*.pkl'))
+        if existing:
+            raise ValueError('Output directory contains smoothing files without a settings manifest')
         manifest.write_text(json.dumps(settings, indent=2))
 
     cross_token = format_factor_token(cross_factor)
@@ -299,6 +299,8 @@ def run_spatial_smoothing(*, cross_factor=50, height_factor=2, config_path=None,
         raise FileNotFoundError(
             f"No continent data were found in {input_file} for the requested Step 7 run."
         )
+    if destination.resolve() == paths.single_smoothed_dir.resolve() and set(target_continents) != set(available_continents):
+        raise ValueError('Canonical Step 7 output requires all available continents; use --output-dir for a subset')
 
     tasks = [
         (cont, df[df['file'] == cont].copy(), destination, cross_token, hf_token,
@@ -333,11 +335,11 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description='Step 7 entrypoint: spatially smooth the aggregated confinement dataset.'
     )
-    parser.add_argument('--method', choices=['legacy', 'local'], default='legacy')
+    parser.add_argument('--method', choices=['legacy', 'local'], default='local')
     parser.add_argument('--neighbors-per-direction', type=int, default=3)
     parser.add_argument('--alpha', type=float, default=0.75)
     parser.add_argument('--length-floor', action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument('--output-dir', type=Path, help='Separate directory for this smoothing configuration')
+    parser.add_argument('--output-dir', type=Path, help='Optional alternate directory for this smoothing configuration')
     parser.add_argument(
         '--config',
         help='Path to config/paths.local.json. Defaults to config/paths.local.json when present.',

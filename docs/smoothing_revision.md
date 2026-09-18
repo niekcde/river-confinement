@@ -1,9 +1,10 @@
 # Step 7 smoothing revision
 
 The existing `bend_neighbor_graph` and `smooth_attributes` functions are retained
-unchanged for baseline reproduction. Step 7 defaults to `--method legacy` until
-sensitivity results justify adopting a new setting. No final N or alpha has been
-chosen. Steps 2–6 are not modified.
+for baseline reproduction. Step 7 now defaults to the selected local settings:
+three neighbors per direction, alpha 0.75, with the length floor enabled. Its
+canonical outputs live in `results/single_smoothed`. Use a separate output
+directory for `--method legacy` or other experiments. Steps 2–6 are not modified.
 
 ## New method
 
@@ -38,13 +39,12 @@ Run with an environment containing the repository's scientific dependencies. On
 the current workstation `/opt/anaconda3/envs/test-orthogonals/bin/python` was used.
 Set `PYTHONDONTWRITEBYTECODE=1` to avoid modifying tracked bytecode files.
 
-Single experimental Step 7 run (settings are provisional):
+Single Step 7 run with the selected settings:
 
 ```sh
 python -m pipeline.build_step7_spatial_smoothing \
-  --config /path/to/paths.json --height-factor 2 --continents oc \
-  --method local --neighbors-per-direction 3 --alpha 0.75 --length-floor \
-  --output-dir results/smoothing_revision/example/single_smoothed
+  --config /path/to/paths.json --height-factor 2 \
+  --method local --neighbors-per-direction 3 --alpha 0.75 --length-floor
 ```
 
 The combined Step 7–8 wrapper accepts the same method parameters and an experiment
@@ -52,7 +52,8 @@ root `--output-dir`; it places smoothing files under `single_smoothed` and tunin
 scores at the experiment root. Step 8 also accepts `--input-dir` and `--output-dir`.
 Existing tuning behavior is preserved. Step 7 concatenates only continents
 produced by that invocation. A settings manifest rejects reuse of a directory for
-a different smoothing configuration.
+a different smoothing configuration, including the canonical directory. Canonical
+runs require all available continents; use an experiment directory for a subset.
 
 Nine-setting grid, with an existing baseline:
 

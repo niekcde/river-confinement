@@ -121,9 +121,7 @@ class LocalSmoothingTests(unittest.TestCase):
             config=root/'paths.json'
             config.write_text(json.dumps({'results_root':str(root)}))
             out=root/'experiment'
-            out.mkdir()
             df=chain([100]*5)
-            df.to_xarray().to_netcdf(out/'af_50_02_smoothed.nc')
             with patch('pipeline.spatial_smoothing._prepare_smoothing_dataframe',return_value=df):
                 result=run_spatial_smoothing(config_path=config,workers=1,method='local',output_dir=out)
             loaded,path=open_dataset_confinement_clustering(2,config_path=config,input_dir=out)
@@ -132,6 +130,40 @@ class LocalSmoothingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError,'different smoothing'):
                 run_spatial_smoothing(config_path=config,method='local',output_dir=out,alpha=1)
             self.assertFalse((root/'single_smoothed').exists())
+
+    def test_canonical_local_directory_rejects_legacy_and_unmarked_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            values=root/'single_values'
+            values.mkdir()
+            xr.Dataset({'placeholder':('index',[1])}).to_netcdf(values/'global_50_02_conf.nc')
+            config=root/'paths.json'
+            config.write_text(json.dumps({'results_root':str(root)}))
+            destination=root/'single_smoothed'
+            destination.mkdir()
+            (destination/'length_dict_af.pkl').write_bytes(b'incomplete legacy output')
+            with self.assertRaisesRegex(ValueError,'without a settings manifest'):
+                run_spatial_smoothing(config_path=config,workers=1,method='local')
+            (destination/'length_dict_af.pkl').unlink()
+            with patch('pipeline.spatial_smoothing._prepare_smoothing_dataframe',return_value=chain([100]*5)):
+                result=run_spatial_smoothing(config_path=config,workers=1)
+            self.assertEqual(result['global_output'],(destination/'global_50_02_smoothed.nc').resolve())
+            with self.assertRaisesRegex(ValueError,'different smoothing'):
+                run_spatial_smoothing(config_path=config,workers=1,method='legacy')
+
+    def test_canonical_global_rejects_partial_continent_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            values=root/'single_values'
+            values.mkdir()
+            xr.Dataset({'placeholder':('index',[1])}).to_netcdf(values/'global_50_02_conf.nc')
+            config=root/'paths.json'
+            config.write_text(json.dumps({'results_root':str(root)}))
+            df=chain([100]*5)
+            df.loc[0,'file']='af'
+            with patch('pipeline.spatial_smoothing._prepare_smoothing_dataframe',return_value=df):
+                with self.assertRaisesRegex(ValueError,'requires all available continents'):
+                    run_spatial_smoothing(config_path=config,workers=1,continents=['oc'])
 
 
 if __name__=='__main__':
