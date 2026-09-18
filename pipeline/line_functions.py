@@ -243,8 +243,8 @@ def get_points_along_linestring(line, spacing = 20, separate_xy = False):
     distances = np.linspace(0, total_length, num_points)
     
     # Interpolate points at the specified distances
-    points = [list(line.interpolate(distance).coords[0]) for distance in distances]
-    return points
+    points = shapely.line_interpolate_point(line, distances)
+    return shapely.get_coordinates(points, include_z=line.has_z).tolist()
 
 def angle_diff(L : "LineString", stepSize :'int' = 50, plot : 'bool' = False):
     '''
@@ -385,8 +385,17 @@ def get_bend_width(line, bendLine, dfN, dfR):
     
     nodes = dfN[(dfN['linePos'] > start) & (dfN['linePos'] < end)]
     if nodes.shape[0] == 0:
-        nodeDistance = dfN['linePos'] - ((end-start) / 2)
-        nodes        = dfN.iloc[nodeDistance.argmin()]
+        valid = (
+            np.isfinite(dfN['linePos'])
+            & np.isfinite(dfN['width']) & (dfN['width'] > 0)
+            & np.isfinite(dfN['max_width']) & (dfN['max_width'] > 0)
+        )
+        valid_nodes = dfN.loc[valid]
+        if valid_nodes.empty:
+            raise ValueError('No node with finite positive width and max_width for bend fallback')
+        midpoint = (start + end) / 2
+        nodeDistance = abs(valid_nodes['linePos'] - midpoint)
+        nodes        = valid_nodes.iloc[nodeDistance.argmin()]
 
     # endregion Fold End
     meanWidth    = nodes['width'].mean()
@@ -394,7 +403,7 @@ def get_bend_width(line, bendLine, dfN, dfR):
 
     
     if (np.isnan(meanWidth)) | (np.isnan(meanMaxWidth)):
-        if isinstance(nodes['reach_id'], np.int64):
+        if np.isscalar(nodes['reach_id']):
             nodeReaches = [nodes['reach_id']]
         else:
             nodeReaches = nodes['reach_id']

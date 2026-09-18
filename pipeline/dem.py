@@ -177,16 +177,24 @@ def get_raster_vrt(vrt, dfRIn,bufferSize, localCRS, demCRS):
         warnings.simplefilter("ignore")
         dfR.loc[dfRIn.index, 'geometry'] = dfR.geometry.buffer(bufferSize)
 
+    local_bounds = dfR.geometry.total_bounds
     dfR    = dfR.to_crs(demCRS)
     bounds = dfR.geometry.total_bounds
 
     # Define bounding box (xmin, ymax, xmax, ymin) in the VRT's coordinate system
     bounding_box = (bounds[0], bounds[3], bounds[2], bounds[1])  # bounds in DEM crs
 
-    cropped_ds = gdal.Translate('', vrt, projWin=bounding_box, format='VRT', outputType=gdal.GDT_Float32)
-    
-
-    reproj_ds = gdal.Warp('', cropped_ds, dstSRS=localCRS, format='VRT')
+    if bounds[2] - bounds[0] > 180:
+        # A reach crossing the antimeridian has a narrow local footprint but
+        # a nearly world-wide EPSG:4326 bounding box. Crop in its local CRS.
+        cropped_ds = None
+        reproj_ds = gdal.Warp(
+            '', vrt, dstSRS=localCRS, format='VRT',
+            outputBounds=tuple(local_bounds), outputBoundsSRS=localCRS,
+        )
+    else:
+        cropped_ds = gdal.Translate('', vrt, projWin=bounding_box, format='VRT', outputType=gdal.GDT_Float32)
+        reproj_ds = gdal.Warp('', cropped_ds, dstSRS=localCRS, format='VRT')
 
     # Read raster data as numpy array
     band = reproj_ds.GetRasterBand(1)
@@ -204,7 +212,8 @@ def get_raster_vrt(vrt, dfRIn,bufferSize, localCRS, demCRS):
     
     xarr = xr.DataArray(raster_array, coords=[y_coords, x_coords], dims=["y", "x"])
     
-    cropped_ds.FlushCache()
+    if cropped_ds is not None:
+        cropped_ds.FlushCache()
     reproj_ds.FlushCache()
     band, reproj_ds, cropped_ds, raster_array = None, None, None, None
 
@@ -212,5 +221,5 @@ def get_raster_vrt(vrt, dfRIn,bufferSize, localCRS, demCRS):
     del reproj_ds, raster_array,cropped_ds
     del xmin, xres, ymax, yres
     del xmax, ymin, x_coords, y_coords
-    gc.collect()
+    # GDAL handles are released above; leave cyclic collection to Python.
     return xarr

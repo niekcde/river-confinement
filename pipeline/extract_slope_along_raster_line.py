@@ -6,6 +6,7 @@ Created on Tue Apr 30 09:58:07 2024
 @author: niekcollotdescury
 """
 import numpy as np
+import shapely
 import xarray as xr
 
 
@@ -19,24 +20,21 @@ def extract_slope_along_raster_line(xarr, line, samples = 400):
     - Distance values for the slope line
     - Elevation values for the slope Line
         '''
-    profile = []
-    dist    = []
-
     sample_positions = np.arange(samples, dtype=float) / samples - 1.0
-    points = [line.interpolate(position, normalized=True) for position in sample_positions]
+    points = shapely.line_interpolate_point(line, sample_positions, normalized=True)
 
-    xs = [point.x for point in points]
-    ys = [point.y for point in points]
+    xs = shapely.get_x(points)
+    ys = shapely.get_y(points)
     tgt_x = xr.DataArray(xs, dims="points")
     tgt_y = xr.DataArray(ys, dims="points")
-    dist = [line.project(point) for point in points]
+    # Preserve projection semantics for self-intersections and the list return type.
+    dist = shapely.line_locate_point(line, points).tolist()
 
     profile = xarr.sel(x=tgt_x, y=tgt_y, method="nearest").data
     if len(profile) == 1:
         profile = profile[0]
     
     return dist, profile
-
 
 
 

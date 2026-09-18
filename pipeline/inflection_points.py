@@ -570,24 +570,33 @@ def inflection_points_curve(line:"shapely.LineString",
                 # at the physical reach start. Consecutive initial candidates
                 # can also be straight, so retain the reach start until a
                 # following bend is reached; never wrap to infCoords[-1].
-                infCoords[ip+1] = p1
-                removeInd.append(ip)
-                continue
-            elif ip == (lenApex-1):
-                newPos = pos2[0]
+                if ip < lenApex - 1:
+                    infCoords[ip+1] = p1
+                    removeInd.append(ip)
+                    continue
+                # Every candidate was straight: retain the complete centerline
+                # as one analysis segment, including its distinct end point.
+                bendLine = line
+                infLine = LineString([coords[0], coords[-1]])
+                bendWidth, bendMaxWidth = get_bend_width(line, bendLine, dfNodeR, dfR)
+                apexP, apexPO, amplitude = get_apex_distance(bendLine, infLine, True)
+                bendCurvature = np.nanmean(curvature(bendLine, False, False))
             else:
-                newPos = (pos1.item() + pos2.item()) // 2
+                if ip == (lenApex-1):
+                    newPos = pos2[0]
+                else:
+                    newPos = (pos1.item() + pos2.item()) // 2
 
-            newCoord = coords[curveChanges[newPos]]
-            infCoords[ip+1] = newCoord
-            removeInd.append(ip)
+                newCoord = coords[curveChanges[newPos]]
+                infCoords[ip+1] = newCoord
+                removeInd.append(ip)
 
-            # get inflection line and bend values
-            (bendWidth, bendMaxWidth, bendLine, infLine, 
-             amplitude, bendCurvature, segmentSign, 
-             apexP, apexPO) = arcVals(infCoords[ip-1] , newCoord, line, dfR, dfNodeR, True)
+                # get inflection line and bend values
+                (bendWidth, bendMaxWidth, bendLine, infLine,
+                 amplitude, bendCurvature, segmentSign,
+                 apexP, apexPO) = arcVals(infCoords[ip-1] , newCoord, line, dfR, dfNodeR, True)
 
-            ip = ip-1
+                ip = ip-1
         # print(ip, amplitude,int(bendWidth), int(bendMaxWidth), segmentSign, segmentSign == 0,(lenApex > 2))
         # print()
         #####################

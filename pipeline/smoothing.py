@@ -12,12 +12,16 @@ import shapely
 from shapely.geometry import LineString
 
 
-def apply_smoothing(line, w):
-    if w > len(line.coords):
-        w = len(line.coords)
+def _effective_window(w, coordinate_count):
+    if w > coordinate_count:
+        w = coordinate_count
     if w == 0:
         w = 2
-    w = int(w)
+    return int(w)
+
+
+def apply_smoothing(line, w):
+    w = _effective_window(w, len(line.coords))
 
     XSG = sc.signal.savgol_filter(line.xy[0], w, 1)
     YSG = sc.signal.savgol_filter(line.xy[1], w, 1)
@@ -39,6 +43,8 @@ def SG_smoothing(line, w, width, seg = 1, simp = 0.1, simplify_line = True,  id 
         line = line.simplify(simp, preserve_topology=True)
         # line = line.segmentize(seg*10)
     
+    coordinate_count = len(line.coords)
+    last_window = _effective_window(w, coordinate_count)
     lineSmooth = apply_smoothing(line, w)
     # print(len(line.coords), len(lineSmooth.coords))
     # bendLine_coords     = get_points_along_linestring(bendLine, 20)
@@ -55,7 +61,13 @@ def SG_smoothing(line, w, width, seg = 1, simp = 0.1, simplify_line = True,  id 
         if w < 2:
             print(f'Smoothing broken at window size 2 ({w/0.95}) ({id})')
             break;
-        lineSmooth = apply_smoothing(line, w) 
+        current_window = _effective_window(w, coordinate_count)
+        if current_window == last_window:
+            # Same input coordinates and filter window give the same line and distance.
+            # Keep reducing the original float window to preserve stopping behaviour.
+            continue
+        last_window = current_window
+        lineSmooth = apply_smoothing(line, w)
         hdist = shapely.hausdorff_distance(line, lineSmooth)
         # print('?', w, width, hdist)
         # plt.plot(*line.xy)

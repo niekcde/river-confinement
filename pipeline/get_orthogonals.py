@@ -12,7 +12,6 @@ from dataclasses import dataclass
 import numpy as np
 import shapely
 import geopandas as gpd
-import gc
 
 # import partial packages
 from shapely.geometry import LineString
@@ -26,6 +25,14 @@ from .dem import get_raster_vrt
 
 MISSING_VALUE = 99999
 RASTER_EXPANSION_FACTOR = 1.2
+
+
+def _mean_valid_profile_height(profile, dem_fill_value):
+    profile = np.asarray(profile, dtype=float)
+    valid = profile[
+        np.isfinite(profile) & (profile != dem_fill_value) & (profile != MISSING_VALUE)
+    ]
+    return np.mean(valid) if valid.size else np.nan
 
 
 @dataclass
@@ -340,17 +347,13 @@ def sample_orthogonal_profiles(
             elev_out[i], dist_out[i] = _format_profile_output(mean_out, distances_out)
             elev_inn[i], dist_inn[i] = _format_profile_output(mean_inn, distances_inn)
 
-            if np.isnan(np.nanmean(bend_height_profile)):
-                bend_height[i] = MISSING_VALUE
-            else:
-                bend_height[i] = np.nanmean(bend_height_profile)
+            bend_height[i] = _mean_valid_profile_height(bend_height_profile, demFillValeu)
 
         line_slope = _calculate_centerline_slope(raster, line, slope_samples)
     finally:
         if hasattr(raster, "close"):
             raster.close()
         del raster, raster_border
-        gc.collect()
 
     return elev_out, elev_inn, dist_out, dist_inn, line_slope, bend_height
 

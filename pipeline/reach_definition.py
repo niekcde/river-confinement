@@ -818,7 +818,10 @@ def river_catchment_position(df):
                 reachVal = segmentReach
                 distVal = dfSegment['dist_out'].iloc[0]
             else:
-                print(f'new_reach_definition - river_catchment_position: Error no upstream end point detected ({segmentReach})')
+                # Excluded reaches still participate in connectivity, but only
+                # report missing endpoints when an included reach is affected.
+                if (dfSegment['include_flag'] == '0').any():
+                    print(f'new_reach_definition - river_catchment_position: Error no upstream end point detected ({segmentReach})')
                 reachVal = np.nan
                 distVal  = np.nan
             df.loc[segmentIndex, 'max_dist_out'] = distVal

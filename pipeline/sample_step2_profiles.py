@@ -8,7 +8,11 @@ if __package__ in (None, ""):
     __package__ = "pipeline"
 
 import argparse
+import gc
+import os
 import re
+import sqlite3
+from itertools import chain
 from pathlib import Path
 
 import geopandas as gpd
@@ -36,6 +40,18 @@ PROFILE_COLUMNS = [
     "sampling_code",
 ]
 ARRAY_STRING_RE = re.compile(r"[()]|list")
+ORTHOGONAL_READ_BATCH_SIZE = 20_000
+
+
+def _current_rss_mb() -> float | None:
+    if os.environ.get("STEP2_REPORT_MEMORY") != "1":
+        return None
+    try:
+        import psutil
+
+        return psutil.Process().memory_info().rss / (1024 * 1024)
+    except (ImportError, OSError):
+        return None
 
 
 def empty_profile_frame() -> pd.DataFrame:
@@ -124,6 +140,39 @@ def _profile_output_path(paths, orthogonal_path: Path, output_path: str | None =
     return paths.profiles_dir / f"{orthogonal_path.stem}.csv"
 
 
+def _iter_orthogonal_groups(orthogonal_path: Path, batch_size: int = ORTHOGONAL_READ_BATCH_SIZE):
+    """Read ordered GeoPackage rows in bounded batches, retaining a split reach."""
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+
+    with sqlite3.connect(f"file:{orthogonal_path}?mode=ro", uri=True) as connection:
+        layer = connection.execute(
+            "SELECT table_name FROM gpkg_contents WHERE data_type = 'features'"
+        ).fetchone()[0]
+        first_fid, last_fid = connection.execute(
+            f'SELECT MIN(fid), MAX(fid) FROM "{layer}"'
+        ).fetchone()
+
+    if first_fid is None:
+        return
+
+    pending_id = None
+    pending_group = None
+    for start in range(first_fid, last_fid + 1, batch_size):
+        stop = min(start + batch_size - 1, last_fid)
+        batch = gpd.read_file(orthogonal_path, where=f"fid BETWEEN {start} AND {stop}")
+        for combined_reach_id, group in batch.groupby("combined_reach_id", sort=False):
+            if pending_group is not None and combined_reach_id == pending_id:
+                pending_group = pd.concat([pending_group, group])
+            else:
+                if pending_group is not None:
+                    yield pending_id, pending_group
+                pending_id, pending_group = combined_reach_id, group
+
+    if pending_group is not None:
+        yield pending_id, pending_group
+
+
 def sample_profiles_dataframe_from_orthogonals_file(
     orthogonal_path: str | Path,
     *,
@@ -146,8 +195,9 @@ def sample_profiles_dataframe_from_orthogonals_file(
     if orthogonal_path.exists() is False:
         raise FileNotFoundError(f"Orthogonal intermediate not found: {orthogonal_path}")
 
-    orthogonals = gpd.read_file(orthogonal_path)
-    if orthogonals.empty:
+    groups = _iter_orthogonal_groups(orthogonal_path)
+    first_group = next(groups, None)
+    if first_group is None:
         return empty_profile_frame()
 
     vrt_file = str(paths.fabdem_vrt)
@@ -159,7 +209,9 @@ def sample_profiles_dataframe_from_orthogonals_file(
 
     profile_rows = []
     try:
-        for combined_reach_id, group in orthogonals.groupby("combined_reach_id", sort=False):
+        for reach_number, (combined_reach_id, group) in enumerate(
+            chain((first_group,), groups), start=1
+        ):
             line_out = line_inn = left_right = centerline_wkt = np.nan
             try:
                 centerline_wkt = _group_geometry(group, "centerline").wkt
@@ -225,8 +277,20 @@ def sample_profiles_dataframe_from_orthogonals_file(
                         "sampling_code": "4",
                     }
                 )
+            finally:
+                # Bound cyclic garbage without scanning the whole heap twice per reach.
+                if reach_number % 32 == 0:
+                    gc.collect()
+                if reach_number % 250 == 0:
+                    rss_mb = _current_rss_mb()
+                    memory_text = f", RSS {rss_mb:.0f} MB" if rss_mb is not None else ""
+                    print(
+                        f"Sampled profiles for {reach_number} combined reaches{memory_text}",
+                        flush=True,
+                    )
     finally:
         dem_vrt = None
+        gc.collect()
 
     return pd.DataFrame(profile_rows, columns=PROFILE_COLUMNS)
 

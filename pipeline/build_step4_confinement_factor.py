@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pandas as pd
 
-from .bend_io import read_bend_table
 from .paths import load_project_paths
 from .support import confinement_factor_single_values
 
@@ -107,7 +106,13 @@ def build_step4_confinement_factor(
         else:
             return output_file
 
-    width_frames = [read_bend_table(input_path)[[width_column]] for input_path in resolved_inputs]
+    # Step 4 needs only widths; the full bend tables contain large profile arrays.
+    width_frames = [
+        pd.read_parquet(input_path, columns=[width_column])
+        if input_path.suffix.lower() == ".parquet"
+        else pd.read_csv(input_path, usecols=[width_column])
+        for input_path in resolved_inputs
+    ]
     if len(width_frames) == 0:
         raise FileNotFoundError("No width values were loaded for Step 4.")
 

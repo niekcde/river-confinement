@@ -1008,6 +1008,21 @@ def parse_nested_list_string(value):
 
     return _replace_none_with_nan(json.loads(text))
 
+
+def _parse_numeric_list_string(value):
+    """Parse NumPy-formatted lists, including their bare nan/inf tokens."""
+    expression = ast.parse(value, mode="eval")
+
+    class NonFiniteNames(ast.NodeTransformer):
+        def visit_Name(self, node):
+            if node.id == "nan":
+                return ast.copy_location(ast.Constant(value=float("nan")), node)
+            if node.id == "inf":
+                return ast.copy_location(ast.Constant(value=float("inf")), node)
+            return node
+
+    return ast.literal_eval(NonFiniteNames().visit(expression))
+
 def str_to_list_comb(df, listCols, nestedListCols):
 
     dfN = df.groupby('combined_reach_id', as_index = False).first()
@@ -1026,7 +1041,13 @@ def str_to_list_comb(df, listCols, nestedListCols):
                 if col in nestedListCols:
                     colVal = parse_nested_list_string(r[col])
                 else:
-                    colVal = ast.literal_eval(r[col])
+                    try:
+                        colVal = _parse_numeric_list_string(r[col])
+                    except (ValueError, SyntaxError) as exc:
+                        raise ValueError(
+                            f"Invalid {col} for combined_reach_id {r['combined_reach_id']}: "
+                            f"{str(r[col])[:160]!r}"
+                        ) from exc
             dfN.at[i, col] = colVal
     return dfN
 
