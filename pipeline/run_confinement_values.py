@@ -162,6 +162,10 @@ def _prepare_step5_netcdf_dataframe(df):
     ]
     available_cols = [col for col in keep_cols if col in df.columns]
     df_nc = df[available_cols].copy()
+    if 'bendHeight' in df_nc:
+        df_nc['bendHeight'] = df_nc['bendHeight'].replace([-9999, 99999], np.nan)
+    if 'cp_height' in df_nc:
+        df_nc['dem_elevation_missing'] = df_nc['cp_height'].isna()
 
     for col in df_nc.columns:
         if df_nc[col].dtype == 'object':
@@ -316,6 +320,9 @@ def calc_confinement_values(df,fileName, returnDataframe, open_seperate = False,
     'slope_left':'mean','slope_right': 'mean',
     'cp_height':'mean',
     'catchment_position':'first'}).copy()
+    dfEG['dem_elevation_missing'] = dfE.groupby('combined_reach_id')['cp_height'].apply(
+        lambda values: values.isna().any()
+    )
 
 
     gdfEG = gpd.GeoDataFrame(dfEG, geometry = crGeoms, crs = 'EPSG:4326')
@@ -363,13 +370,18 @@ def concat_nc_conf_files(cross = 50, hf = 2, config_path = None):
         print(c)
         files = sorted(step6_paths["single_values_dir"].glob(f"{c}_??_{cross_token}_{hf_token}_conf.nc"))
         for f in tqdm(files):
-            dsTemp = xr.open_dataset(f)
+            with xr.open_dataset(f) as source:
+                dsTemp = source.load()
             dsTemp['file'] = ('index', [c] * dsTemp.sizes['index'])
             dsTemp = dsTemp.drop_vars(['infP', 'bendLines', 'apexP', 'lineInn', 'lineOut'], errors='ignore')
 
             parts = Path(f).stem.split("_")
             dsTemp['file_cont'] = parts[0]
             dsTemp['file_num']  = parts[1]
+            if 'bendHeight' in dsTemp:
+                dsTemp['bendHeight'] = dsTemp['bendHeight'].where(
+                    ~dsTemp['bendHeight'].isin([-9999, 99999])
+                )
 
             dsList.append(dsTemp)
 
@@ -380,10 +392,24 @@ def concat_nc_conf_files(cross = 50, hf = 2, config_path = None):
         )
 
     ds = xr.concat(dsList, dim='index')
+    if 'cp_height' in ds:
+        ds['dem_elevation_missing'] = ds['cp_height'].isnull()
+    # Keep per-file row provenance while giving each aggregate row a unique label.
+    ds['source_index'] = ('index', ds['index'].values.copy())
+    ds = ds.assign_coords(index=np.arange(ds.sizes['index'], dtype=np.int64))
+    # Input NetCDFs may encode strings with the first file's fixed character
+    # width. Infer new encoding from the complete aggregate to avoid truncation.
+    for variable in ds.variables.values():
+        if variable.dtype.kind in {'O', 'U', 'S'}:
+            variable.encoding.clear()
     output_file = step6_paths["single_values_dir"] / f"global_{cross_token}_{hf_token}_conf.nc"
-    if output_file.exists():
-        output_file.unlink()
-    ds.to_netcdf(output_file)
+    temporary_file = output_file.with_suffix('.tmp.nc')
+    try:
+        ds.to_netcdf(temporary_file)
+        temporary_file.replace(output_file)
+    finally:
+        ds.close()
+        temporary_file.unlink(missing_ok=True)
     return output_file
 
 def concat_reachAveraged(cross = 50, hf = 2, config_path = None):
